@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily Briefing — May 4, 2026</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #FAFAF5; color: #1a1a18; font-family: 'Inter', sans-serif; font-size: 14px; line-height: 1.6; }
+  a { color: inherit; text-decoration: none; }
+
+  /* HEADER */
+  .site-header { position: sticky; top: 0; z-index: 100; background: #1a1a18; color: #FAFAF5; padding: 10px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .site-header h1 { font-family: 'Instrument Serif', serif; font-size: 18px; font-weight: 400; }
+  .header-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #aaa; display: flex; align-items: center; gap: 16px; }
+  .action-badge { background: #B83A3A; color: white; border-radius: 20px; padding: 2px 10px; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 700; }
+
+  /* LAYOUT */
+  .container { max-width: 860px; margin: 0 auto; padding: 32px 20px 64px; }
+
+  /* HERO */
+  .hero { margin-bottom: 28px; }
+  .hero-greeting { font-family: 'Instrument Serif', serif; font-size: 36px; font-weight: 400; color: #1a1a18; }
+  .hero-date { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #888; margin-top: 4px; }
+
+  /* STATS ROW */
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+  .stat-card { background: white; border-radius: 10px; padding: 16px; border: 1px solid #eee; text-align: center; }
+  .stat-number { font-family: 'Instrument Serif', serif; font-size: 32px; line-height: 1; }
+  .stat-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
+  .stat-card.urgent .stat-number { color: #B83A3A; }
+  .stat-card.cal .stat-number { color: #3A7556; }
+  .stat-card.reply .stat-number { color: #3D5DAA; }
+  .stat-card.todo .stat-number { color: #A8843A; }
+
+  /* FILTER PILLS */
+  .filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 28px; }
+  .filter-pill { padding: 6px 14px; border-radius: 20px; border: 1.5px solid #ddd; background: white; cursor: pointer; font-size: 12px; font-weight: 500; transition: all .15s; color: #555; }
+  .filter-pill:hover { border-color: #A8843A; color: #A8843A; }
+  .filter-pill.active { background: #1a1a18; border-color: #1a1a18; color: white; }
+
+  /* SECTION HEADERS */
+  .section-header { display: flex; align-items: center; gap: 10px; margin: 36px 0 14px; }
+  .section-title { font-family: 'Instrument Serif', serif; font-size: 22px; font-weight: 400; }
+  .section-count { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: #eee; color: #666; border-radius: 20px; padding: 2px 8px; }
+  .section-count.red { background: #fde8e8; color: #B83A3A; }
+  .section-count.green { background: #e4f0ea; color: #3A7556; }
+  .section-count.blue { background: #e6eaf8; color: #3D5DAA; }
+  .section-count.gold { background: #f8f1e4; color: #A8843A; }
+
+  /* EMAIL CARDS */
+  .email-card { background: white; border-radius: 10px; padding: 16px 18px; margin-bottom: 10px; border: 1px solid #eee; border-left: 4px solid #eee; }
+  .email-card.urgent { border-left-color: #B83A3A; }
+  .account-chip { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 10px; background: #f0ede6; color: #666; border-radius: 4px; padding: 2px 6px; margin-bottom: 6px; }
+  .account-chip.hsg { background: #e4f0ea; color: #3A7556; }
+  .account-chip.bio { background: #e6eaf8; color: #3D5DAA; }
+  .email-from { font-weight: 600; font-size: 13px; color: #333; }
+  .email-subject { font-weight: 500; margin-top: 2px; }
+  .email-summary { color: #555; font-size: 13px; margin-top: 4px; }
+  .email-meta { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .email-tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
+  .email-tag.deadline { background: #fde8e8; color: #B83A3A; }
+  .email-tag.action { background: #f8f1e4; color: #A8843A; }
+  .email-tag.link-tag { background: #f5f5f0; color: #555; border: 1px solid #ddd; }
+  .email-tag.link-tag:hover { background: #eee; }
+
+  /* ACTION CARDS */
+  .action-card { background: white; border-radius: 10px; padding: 16px 18px; margin-bottom: 10px; border: 1px solid #eee; }
+  .action-card.calendar { border-left: 4px solid #3A7556; }
+  .action-card.reply { border-left: 4px solid #3D5DAA; }
+  .action-type { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 4px; }
+  .action-type.cal { color: #3A7556; }
+  .action-type.rep { color: #3D5DAA; }
+  .action-title { font-weight: 600; font-size: 14px; }
+  .action-detail { font-size: 13px; color: #555; margin-top: 3px; }
+  .action-source { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #999; margin-top: 6px; }
+  .action-buttons { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+  .action-btn { display: inline-block; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 500; border: 1.5px solid #ddd; background: white; color: #444; cursor: pointer; transition: all .15s; }
+  .action-btn:hover { border-color: #999; color: #222; }
+  .action-btn.primary { background: #1a1a18; border-color: #1a1a18; color: white; }
+  .action-btn.primary:hover { background: #333; }
+  .calendar-select { padding: 6px 10px; border-radius: 6px; border: 1.5px solid #ddd; font-size: 12px; background: white; color: #444; font-family: 'Inter', sans-serif; }
+
+  /* SCHEDULE */
+  .schedule-container { background: white; border-radius: 10px; border: 1px solid #eee; overflow: hidden; margin-bottom: 10px; }
+  .schedule-event { display: flex; align-items: center; gap: 16px; padding: 14px 18px; border-bottom: 1px solid #f5f5f0; }
+  .schedule-event:last-child { border-bottom: none; }
+  .schedule-time { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #888; min-width: 120px; }
+  .schedule-info { flex: 1; }
+  .schedule-title { font-weight: 600; font-size: 14px; }
+  .schedule-calendar { font-size: 11px; margin-top: 2px; font-weight: 500; }
+  .schedule-location { font-size: 12px; color: #888; margin-top: 1px; }
+  .schedule-link { font-size: 12px; color: #3D5DAA; font-weight: 500; white-space: nowrap; }
+  .schedule-link:hover { text-decoration: underline; }
+  .empty-schedule { padding: 20px 18px; color: #888; font-style: italic; }
+
+  /* TO-DO */
+  .todo-item { display: flex; align-items: flex-start; gap: 12px; background: white; border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; border: 1px solid #eee; cursor: pointer; transition: background .15s; }
+  .todo-item:hover { background: #fafaf8; }
+  .todo-item.checked { opacity: .5; }
+  .todo-item.checked .todo-text { text-decoration: line-through; }
+  .todo-check { width: 20px; height: 20px; border-radius: 5px; border: 2px solid #ddd; background: white; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; transition: all .15s; }
+  .todo-item.checked .todo-check { background: #3A7556; border-color: #3A7556; }
+  .todo-priority { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 1px 6px; border-radius: 3px; margin-bottom: 3px; }
+  .todo-priority.high { background: #fde8e8; color: #B83A3A; }
+  .todo-priority.medium { background: #f8f1e4; color: #A8843A; }
+  .todo-priority.low { background: #f0f0ee; color: #888; }
+  .todo-text { font-size: 13px; font-weight: 500; }
+  .category-acc { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #bbb; margin-top: 2px; }
+
+  /* CATEGORY ITEMS */
+  .category-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #f5f5f0; background: white; }
+  .category-item:first-child { border-radius: 10px 10px 0 0; }
+  .category-item:last-child { border-radius: 0 0 10px 10px; border-bottom: none; }
+  .category-item:only-child { border-radius: 10px; }
+  .category-list { border: 1px solid #eee; border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
+  .category-sender { font-weight: 600; font-size: 12px; min-width: 130px; color: #333; padding-top: 1px; }
+  .category-arrow { color: #ccc; font-size: 14px; padding-top: 0; }
+  .category-detail { font-size: 13px; flex: 1; }
+  .category-link { font-size: 11px; color: #3D5DAA; margin-top: 3px; display: inline-block; }
+  .category-link:hover { text-decoration: underline; }
+
+  /* NEWSLETTER BLOCK */
+  .newsletter-block { background: white; border-radius: 10px; border: 1px solid #eee; padding: 16px 18px; margin-bottom: 10px; }
+  .newsletter-list { list-style: none; }
+  .newsletter-list li { padding: 5px 0; border-bottom: 1px solid #f5f5f0; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+  .newsletter-list li:last-child { border-bottom: none; }
+  .newsletter-sender { color: #888; font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+
+  /* SPAM BLOCK */
+  .spam-block { background: #fafaf0; border-radius: 10px; border: 1px solid #eee; padding: 14px 18px; }
+  .spam-list { list-style: none; }
+  .spam-list li { padding: 3px 0; font-size: 12px; color: #999; display: flex; gap: 8px; }
+  .spam-bullet { color: #ddd; }
+
+  /* STATS TABLE */
+  .stats-table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; border: 1px solid #eee; margin-bottom: 10px; }
+  .stats-table th { background: #f5f5f0; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 8px 14px; text-align: left; color: #888; font-weight: 600; }
+  .stats-table td { padding: 8px 14px; font-size: 13px; border-top: 1px solid #f5f5f0; }
+  .stats-table tr:first-child td { border-top: none; }
+
+  /* FOOTER */
+  .footer { text-align: center; padding: 24px; font-size: 12px; color: #bbb; border-top: 1px solid #eee; margin-top: 40px; font-style: italic; }
+
+  /* URGENT BANNER */
+  .urgent-banner { background: #fde8e8; border: 1.5px solid #f5c0c0; border-radius: 8px; padding: 10px 16px; margin-bottom: 14px; font-size: 13px; color: #B83A3A; font-weight: 500; }
+
+  @media (max-width: 600px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .schedule-event { flex-direction: column; gap: 6px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 1. STICKY HEADER -->
+<header class="site-header">
+  <h1>Daily Briefing</h1>
+  <div class="header-meta">
+    <span>Mon, May 4, 2026 · 4:30 PM EST</span>
+    <span class="action-badge">2 Urgent</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- 2. HERO -->
+  <div class="hero">
+    <div class="hero-greeting">Good evening, Ben.</div>
+    <div class="hero-date">Monday, May 4, 2026 · Tomorrow is Tuesday, May 5</div>
+  </div>
+
+  <!-- 3. STATS ROW -->
+  <div class="stats-row">
+    <div class="stat-card urgent">
+      <div class="stat-number">2</div>
+      <div class="stat-label">Urgent</div>
+    </div>
+    <div class="stat-card cal">
+      <div class="stat-number">1</div>
+      <div class="stat-label">Events Tomorrow</div>
+    </div>
+    <div class="stat-card reply">
+      <div class="stat-number">6</div>
+      <div class="stat-label">Suggested Replies</div>
+    </div>
+    <div class="stat-card todo">
+      <div class="stat-number">9</div>
+      <div class="stat-label">To-dos</div>
+    </div>
+  </div>
+
+  <!-- 4. ACCOUNT FILTER PILLS -->
+  <div class="filter-row">
+    <div class="filter-pill active" data-filter="all" onclick="filterAccount('all')">All accounts</div>
+    <div class="filter-pill" data-filter="bendavis354@gmail.com" onclick="filterAccount('bendavis354@gmail.com')">bendavis354 · Personal</div>
+    <div class="filter-pill" data-filter="ben@heartspringgardens.org" onclick="filterAccount('ben@heartspringgardens.org')">Heart Spring Gardens</div>
+    <div class="filter-pill" data-filter="benjamin@biodynamics.com" onclick="filterAccount('benjamin@biodynamics.com')">Biodynamics</div>
+  </div>
+
+  <!-- 5. URGENT EMAILS -->
+  <div class="section-header">
+    <span class="section-title">Urgent</span>
+    <span class="section-count red">2</span>
+  </div>
+
+  <div class="urgent-banner">⚠ One of these requires immediate security action — your Google recovery email was changed today.</div>
+
+  <div class="email-card urgent" data-account="bendavis354@gmail.com">
+    <span class="account-chip">bendavis354@gmail.com</span>
+    <div class="email-from">Google Security Alert</div>
+    <div class="email-subject">Security alert — Recovery email changed</div>
+    <div class="email-summary">Google is notifying you that the recovery email for bendavis354@gmail.com was changed today. If you didn't do this, your account may be compromised and you should act immediately.</div>
+    <div class="email-meta">
+      <span class="email-tag deadline">Act Now</span>
+      <a href="https://myaccount.google.com/security" target="_blank" class="email-tag link-tag">Review Account Security →</a>
+      <a href="https://mail.google.com/mail/u/0/#inbox/19df32f897ef7970" target="_blank" class="email-tag link-tag">View in Gmail →</a>
+    </div>
+  </div>
+
+  <div class="email-card urgent" data-account="benjamin@biodynamics.com">
+    <span class="account-chip bio">benjamin@biodynamics.com</span>
+    <div class="email-from">Zachary (biodynamics.com)</div>
+    <div class="email-subject">Fwd: Quickbooks payroll — discuss tomorrow?</div>
+    <div class="email-summary">Zachary forwarded Ari Rosner's opinion on Quickbooks vs. Gusto payroll and flagged the regular 2 PM meeting tomorrow as the right time to discuss. You have that meeting on your calendar.</div>
+    <div class="email-meta">
+      <span class="email-tag action">Tomorrow 2 PM</span>
+      <a href="https://mail.google.com/mail/u/0/#inbox/19dd900a763e19ef" target="_blank" class="email-tag link-tag">View in Gmail →</a>
+    </div>
+  </div>
+
+  <!-- 6. TOMORROW'S SCHEDULE -->
+  <div class="section-header">
+    <span class="section-title">Tomorrow's Schedule</span>
+    <span class="section-count green">1 event</span>
+  </div>
+
+  <div class="schedule-container" data-account="bendavis354@gmail.com">
+    <div class="schedule-event">
+      <div class="schedule-time">2:00 PM – 3:00 PM</div>
+      <div class="schedule-info">
+        <div class="schedule-title">Regular meeting with Ben and Coree</div>
+        <div class="schedule-calendar" style="color:#A8843A;">● Personal (bendavis354@gmail.com)</div>
+        <div class="schedule-location">Organized by Zachary · also: Coree, coreekaleseed</div>
+      </div>
+      <a href="https://www.google.com/calendar/event?eid=cDQzdXVlamR2ajZiNjh2NDJ2ZjJmcWtpcGZfMjAyNjA1MDVUMTgwMDAwWiBiZW5kYXZpczM1NEBt&ctz=America/New_York" target="_blank" class="schedule-link">Open →</a>
+    </div>
+  </div>
+
+  <!-- 7. CALENDAR EVENT PROPOSALS -->
+  <div class="section-header">
+    <span class="section-title">Calendar Event Proposals</span>
+    <span class="section-count green">2</span>
+  </div>
+
+  <div class="action-card calendar" data-account="bendavis354@gmail.com" id="event-1">
+    <span class="account-chip">bendavis354@gmail.com</span>
+    <div class="action-type cal">Calendar Event</div>
+    <div class="action-title">Karma Study Group – Triform</div>
+    <div class="action-detail">Thursday, May 7 · Proposed 7:00 PM – 9:00 PM</div>
+    <div class="action-detail">Norbert asks you to prepare the 4th lecture up to the bottom of p. 74: <em>"…to him as that of the present life."</em> Location: Woodland.</div>
+    <div class="action-source">Source: Norbert@triform.org → Next meeting May 7th</div>
+    <div class="action-buttons">
+      <select class="calendar-select" onchange="updateCalLink('event-1', this.value)">
+        <option value="bendavis354%40gmail.com">Personal (bendavis354)</option>
+        <option value="ben%40heartspringgardens.org">Heart Spring Gardens</option>
+      </select>
+      <a href="https://calendar.google.com/calendar/render?action=TEMPLATE&text=Karma+Study+Group+%E2%80%93+Triform&dates=20260507T190000%2F20260507T210000&details=Prepare+4th+lecture+up+to+bottom+of+p.+74+%28%22...to+him+as+that+of+the+present+life.%22%29&location=Woodland&src=bendavis354%40gmail.com" target="_blank" class="action-btn primary" id="cal-link-event-1">Add to Calendar</a>
+      <button class="action-btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
+    </div>
+  </div>
+
+  <div class="action-card calendar" data-account="ben@heartspringgardens.org" id="event-2">
+    <span class="account-chip hsg">ben@heartspringgardens.org</span>
+    <div class="action-type cal">Calendar Event</div>
+    <div class="action-title">Mettabee Farm / Heart Spring Gardens — Lease Meeting</div>
+    <div class="action-detail">Suggested: Mon, May 11 · 10:00 AM – 11:00 AM</div>
+    <div class="action-detail">Nancy Sciocchetti and Elizabeth from Mettabee Farm are ready to schedule. Elizabeth is traveling May 5–10; Nancy says wait until she's back. May 11 (Monday) is suggested.</div>
+    <div class="action-source">Source: nancy@nancysciocchetti.com → Re: Working with Mettabee Farm and Heart Spring Gardens</div>
+    <div class="action-buttons">
+      <select class="calendar-select" onchange="updateCalLink('event-2', this.value)">
+        <option value="bendavis354%40gmail.com">Personal (bendavis354)</option>
+        <option value="ben%40heartspringgardens.org">Heart Spring Gardens</option>
+      </select>
+      <a href="https://calendar.google.com/calendar/render?action=TEMPLATE&text=Mettabee+Farm+%2F+Heart+Spring+Gardens+Lease+Meeting&dates=20260511T100000%2F20260511T110000&details=With+Nancy+Sciocchetti+%28nancy%40nancysciocchetti.com%29+and+Elizabeth+%28elizabeth%40mettabeefarm.com%29.+Continuing+the+lease+creation+process.&location=&src=ben%40heartspringgardens.org" target="_blank" class="action-btn primary" id="cal-link-event-2">Add to Calendar</a>
+      <button class="action-btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
+    </div>
+  </div>
+
+  <!-- 8. SUGGESTED REPLIES -->
+  <div class="section-header">
+    <span class="section-title">Suggested Replies</span>
+    <span class="section-count blue">6</span>
+  </div>
+
+  <div class="action-card reply" data-account="ben@heartspringgardens.org">
+    <span class="account-chip hsg">ben@heartspringgardens.org</span>
+    <div class="action-type rep">Suggested Reply</div>
+    <div class="action-title">Feedback on AM Leonard quote</div>
+    <div class="action-detail">Jean-David forwarded a quote from AM Leonard (horticultural supplies) and asked what you think. He needs your go/no-go before ordering.</div>
+    <div class="action-source">Source: jean-david@heartspringgardens.org → Fwd: A.M. Leonard Quote Proposal # AWQ.00035200</div>
+    <div class="action-buttons">
+      <a href="https://mail.google.com/mail/?view=cm&fs=1&to=jean-david%40heartspringgardens.org&su=Re%3A%20Fwd%3A%20A.M.%20Leonard%2C%20Inc.%3A%20Quote%20Proposal%20%23%20AWQ.00035200&body=Hi%20Jean-David%2C%0A%0A" target="_blank" class="action-btn primary">Reply in Gmail</a>
+      <a href="https://mail.google.com/mail/u/0/#inbox/19df3e44cb7ddacd" target="_blank" class="action-btn">View Thread</a>
+      <button class="action-btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
+    </div>
+  </div>
+
+  <div class="action-card reply" data-account="benjamin@biodynamics.com">
+    <span class="account-chip bio">benjamin@biodynamics.com</span>
+    <div class="action-type rep">Suggested Reply</div>
+    <div class="action-title">Acknowledge Quickbooks / Gusto for tomorrow's meeting</div>
+    <div class="action-detail">Quick reply to Zachary confirming you've read Ari's note and will be ready to discuss at the 2 PM meeting tomorrow.</div>
+    <div class="action-source">Source: zachary@biodynamics.com → Fwd: Quickbooks payroll</div>
+    <div class="action-buttons">
+      <a href="https://mail.google.com/mail/?view=cm&fs=1&to=zachary%40biodynamics.com&su=Re%3A%20Fwd%3A%20Quickbooks%20payroll&body=Hi%20Zachary%2C%0A%0AThanks%20%E2%80%94%20will%20review%20Ari%27s%20note%20and%20come%20ready%20to%20discuss%20at%20tomorrow%27s%202%20PM.%0A%0ABen" target="_blank" class="action-btn primary">Reply in Gmail</a>
+      <a href="https://mail.google.com/mail/u/0/#inbox/19dd900a763e19ef" target="_blank" class="action-btn">View Thread</a>
+      <button class="action-btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
+    </div>
+  </div>
+
+  <div class="action-card reply" data-account="ben@heartspringgardens.org">
+    <span class="account-chip hsg">ben@heartspringgardens.org</span>
+    <div class="action-type rep">Suggested Reply</div>
+    <div class="action-title">Respond to Jean Gib's fundraising research</div>
+    <div class="action-detail">Jean Gib shared notes from the May 1st meeting with limited encouraging news on fundraising — mentions Northeast SARE grants and USDA Specialty Crop Block grants. Acknowledge and discuss next steps.</div>
+    <div class="action-source">Source: jeangib@pm.me → Notes from Friday May 1st meeting</div>
+    <div class="action-buttons">
+      <a href="https://mail.google.com/mail/?view=cm&fs=1&to=jeangib%40pm.me&cc=jeandavidderreumaux%40gmail.com&su=Re%3A%20Notes%20from%20Friday%20May%201st%20meeting&body=Hi%20Jean%2C%0A%0AThank%20you%20for%20the%20thoughtful%20notes%20and%20for%20researching%20the%20grant%20options.%0A%0A" target="_blank" class="action-btn primary">Reply in Gmail</a>
+      <a href="https://mail.google.com/mail/u/0/#inbox/19df40570995b52b" target="_blank" class="action-btn">View Thread</a>
+      <button class="action-btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
+    </div>
+  </div>
+
+  <div class="action-card reply" data-account="ben@heartspringgardens.org">
+    <span class="account-chip hsg">ben@heartspringgardens.org</span>
+    <div class="action-type rep">Suggested Reply</div>
+    <div class="action-title">Respond to volunteer sign-up from Gisela Franceschelli</div>
+    <div class="action-detail">Gisela (gisela@camphillghent.org, 518-929-3256) signed up for occasional work days via the website. Worth welcoming her and proposing a first date.</div>
+    <div class="action-source">Source: form-submission@squarespace.info → Form Submission - VOLUNTEER SIGN-UP</div>
+    <div class="action-buttons">
+      <a href="https://mail.google.com/mail/?view=cm&fs=1&to=gisela%40camphillghent.org&su=Re%3A%20Volunteer%20Sign-Up%20at%20Heart%20Spring%20Gardens&body=Dear%20Gisela%2C%0A%0AThank%20you%20for%20signing%20up%20to%20volunteer%20at%20Heart%20Spring%20Gardens!%20We%20would%20love%20to%20have%20you%20join%20us%20for%20a%20work%20day.%0A%0A" target="_blank" class="action-btn primary">Reply in Gmail</a>
+      <a href="https://mail.google.com/mail/u/0/#inbox/19df0b4c962ab0c1" target="_blank" class="action-btn">View Thread</a>
+      <button class="action-btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
+    </div>
+  </div>
+
+  <div class="action-card reply" data-account="bendavis354@gmail.com">
+    <span class="account-chip">bendavis354@gmail.com</span>
+    <div class="action-type rep">Suggested Reply</div>
+    <div class="action-title">Schedule Mettabee Farm lease meeting</div>
+    <div class="action-detail">Nancy asked whether to set a date now or wait until Elizabeth is back from travel (returns ~May 11). Reply suggesting a date.</div>
+    <div class="action-source">Source: nancy@nancysciocchetti.com → Re: Working with Mettabee Farm and Heart Spring Gardens</div>
+    <div class="action-buttons">
+      <a href="https://mail.google.com/mail/?view=cm&fs=1&to=nancy%40nancysciocchetti.com&cc=elizabeth%40mettabeefarm.com%2Cjean-david%40heartspringgardens.org&su=Re%3A%20Working%20with%20Mettabee%20Farm%20and%20Heart%20Spring%20Gardens&body=Good%20morning%20Nancy%20and%20Elizabeth%2C%0A%0ALet%27s%20wait%20until%20Elizabeth%20is%20back.%20Would%20the%20week%20of%20May%2011th%20work%3F%0A%0ABen" target="_blank" class="action-btn primary">Reply in Gmail</a>
+      <a href="https://mail.google.com/mail/u/0/#inbox/19ddfd49b3bbb102" target="_blank" class="action-btn">View Thread</a>
+      <button class="action-btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
+    </div>
+  </div>
+
+  <div class="action-card reply" data-account="bendavis354@gmail.com">
+    <span class="account-chip">bendavis354@gmail.com</span>
+    <div class="action-type rep">Suggested Reply</div>
+    <div class="action-title">Reply to David Adams (Hohenfels)</div>
+    <div class="action-detail">David writes from iCloud — he hasn't heard from you in a long time and was reminded of your conversation at Hermannsberg while visiting the Bodensee. He dreamt of you. A personal catch-up reply.</div>
+    <div class="action-source">Source: davidadamsbotton@icloud.com → Hohenfels</div>
+    <div class="action-buttons">
+      <a href="https://mail.google.com/mail/?view=cm&fs=1&to=davidadamsbotton%40icloud.com&su=Re%3A%20Hohenfels&body=Dear%20David%2C%0A%0AHow%20wonderful%20to%20hear%20from%20you!%20I%20think%20of%20our%20conversations%20at%20Hermannsberg%20often.%0A%0A" target="_blank" class="action-btn primary">Reply in Gmail</a>
+      <a href="https://mail.google.com/mail/u/0/#inbox/19dea56bcb5c059e" target="_blank" class="action-btn">View Thread</a>
+      <button class="action-btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
+    </div>
+  </div>
+
+  <!-- 9. TO-DO LIST -->
+  <div class="section-header">
+    <span class="section-title">To-Do List</span>
+    <span class="section-count gold">9</span>
+  </div>
+
+  <div class="todo-item" data-account="bendavis354@gmail.com" onclick="this.classList.toggle('checked')">
+    <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+    <div>
+      <div class="todo-priority high">High</div>
+      <div class="todo-text">Check Google account security — recovery email was changed today without explanation</div>
+      <div class="category-acc">bendavis354@gmail.com</div>
+    </div>
+  </div>
+
+  <div class="todo-item" data-account="benjamin@biodynamics.com" onclick="this.classList.toggle('checked')">
+    <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+    <div>
+      <div class="todo-priority high">High</div>
+      <div class="todo-text">Review Ari's Quickbooks vs. Gusto comparison before tomorrow's 2 PM meeting</div>
+      <div class="category-acc">benjamin@biodynamics.com</div>
+    </div>
+  </div>
+
+  <div class="todo-item" data-account="ben@heartspringgardens.org" onclick="this.classList.toggle('checked')">
+    <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+    <div>
+      <div class="todo-priority high">High</div>
+      <div class="todo-text">Respond to volunteer sign-up from Gisela Franceschelli (Camphill Ghent, occasional work days)</div>
+      <div class="category-acc">ben@heartspringgardens.org</div>
+    </div>
+  </div>
+
+  <div class="todo-item" data-account="bendavis354@gmail.com" onclick="this.classList.toggle('checked')">
+    <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+    <div>
+      <div class="todo-priority high">High</div>
+      <div class="todo-text">Prepare for Triform Karma Study Group, May 7 — read 4th lecture up to p. 74 ("…to him as that of the present life.")</div>
+      <div class="category-acc">bendavis354@gmail.com</div>
+    </div>
+  </div>
+
+  <div class="todo-item" data-account="ben@heartspringgardens.org" onclick="this.classList.toggle('checked')">
+    <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+    <div>
+      <div class="todo-priority medium">Medium</div>
+      <div class="todo-text">Give Jean-David feedback on AM Leonard quote proposal (AWQ.00035200)</div>
+      <div class="category-acc">ben@heartspringgardens.org</div>
+    </div>
+  </div>
+
+  <div class="todo-item" data-account="bendavis354@gmail.com" onclick="this.classList.toggle('checked')">
+    <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+    <div>
+      <div class="todo-priority medium">Medium</div>
+      <div class="todo-text">Schedule Mettabee Farm lease meeting — reply to Nancy suggesting week of May 11</div>
+      <div class="category-acc">bendavis354@gmail.com</div>
+    </div>
+  </div>
+
+  <div class="todo-item" data-account="ben@heartspringgardens.org" onclick="this.classList.toggle('checked')">
+    <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+    <div>
+      <div class="todo-priority medium">Medium</div>
+      <div class="todo-text">Respond to Jean Gib's fundraising notes from May 1st meeting — discuss grant opportunities (SARE, USDA Specialty Crop)</div>
+      <div class="category-acc">ben@heartspringgardens.org</div>
+    </div>
+  </div>
+
+  <div class="todo-item" data-account="bendavis354@gmail.com" onclick="this.classList.toggle('checked')">
+    <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+    <div>
+      <div class="todo-priority medium">Medium</div>
+      <div class="todo-text">Look into Verizon Small Business Digital Ready $10K grant (apply once, eligible all year — via Albany edu)</div>
+      <div class="category-acc">bendavis354@gmail.com</div>
+    </div>
+  </div>
+
+  <div class="todo-item" data-account="bendavis354@gmail.com" onclick="this.classList.toggle('checked')">
+    <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+    <div>
+      <div class="todo-priority low">Low</div>
+      <div class="todo-text">Reply to David Adams (Hohenfels / Bodensee) — old friend reaching out after a long silence</div>
+      <div class="category-acc">bendavis354@gmail.com</div>
+    </div>
+  </div>
+
+  <!-- 10. BUSINESS EMAILS -->
+  <div class="section-header">
+    <span class="section-title">Business</span>
+    <span class="section-count">7</span>
+  </div>
+
+  <div class="category-list">
+    <div class="category-item" data-account="ben@heartspringgardens.org">
+      <div class="category-sender">Jean Gib</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Notes from Friday May 1st meeting</strong> — Limited encouraging fundraising news; mentions NE SARE grants and USDA Specialty Crop Block grants worth exploring.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19df40570995b52b" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">ben@heartspringgardens.org</div>
+      </div>
+    </div>
+    <div class="category-item" data-account="ben@heartspringgardens.org">
+      <div class="category-sender">Jean-David (HSG)</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Fwd: AM Leonard Quote Proposal #AWQ.00035200</strong> — Jean-David forwarded a supplier quote and asks what you think before proceeding.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19df3e44cb7ddacd" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">ben@heartspringgardens.org</div>
+      </div>
+    </div>
+    <div class="category-item" data-account="benjamin@biodynamics.com">
+      <div class="category-sender">Dorothy (biodynamics)</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Final agenda</strong> — Dorothy shared the meeting agenda; notes she can't access new Drive content without a direct link. April edits included.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19df34727e48dd50" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">benjamin@biodynamics.com</div>
+      </div>
+    </div>
+    <div class="category-item" data-account="ben@heartspringgardens.org">
+      <div class="category-sender">High Falls Gardens</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Adventures in Chinese Herbs</strong> — Zach from High Falls Gardens shares notes on sourcing Chinese Dittany (Dictamnus) and related botanical research. Possible collaboration interest.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19df335995ed5bd0" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">ben@heartspringgardens.org</div>
+      </div>
+    </div>
+    <div class="category-item" data-account="ben@heartspringgardens.org">
+      <div class="category-sender">Gisela Franceschelli</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Form Submission — VOLUNTEER SIGN-UP</strong> — Gisela from Camphill Ghent (518-929-3256) signed up for occasional volunteer work days via heartspringgardens.org.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19df0b4c962ab0c1" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">ben@heartspringgardens.org</div>
+      </div>
+    </div>
+    <div class="category-item" data-account="bendavis354@gmail.com">
+      <div class="category-sender">Albany.edu / Verizon</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>$10,000 Small Business Grant Opportunity</strong> — Verizon Digital Ready grant, apply once in 2026 and remain eligible for $10K awards throughout the year.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19df444e02b963d6" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+    <div class="category-item" data-account="bendavis354@gmail.com">
+      <div class="category-sender">Squarespace</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Email Subscriber Report</strong> — Heart Spring Gardens gained 295 new subscribers this week (Apr 26–May 2). Strong growth worth noting.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19df3f6b8fc80f9f" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 11. PERSONAL EMAILS -->
+  <div class="section-header">
+    <span class="section-title">Personal</span>
+    <span class="section-count">2</span>
+  </div>
+
+  <div class="category-list">
+    <div class="category-item" data-account="bendavis354@gmail.com">
+      <div class="category-sender">David Adams</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Hohenfels</strong> — Old friend reaching out after a long silence; visiting the Bodensee reminded him of your conversation at Hermannsberg, and he dreamt of you. Warmly personal.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19dea56bcb5c059e" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+    <div class="category-item" data-account="bendavis354@gmail.com">
+      <div class="category-sender">CCSC Soccer</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Re: CCSC Player Planning Session</strong> — Mary Barbato reports the player planning session went well; the girls were enthusiastic. Update on this year's camp advanced groups.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19dc4ad2358af60f" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 12. FINANCIAL EMAILS -->
+  <div class="section-header">
+    <span class="section-title">Financial</span>
+    <span class="section-count">1</span>
+  </div>
+
+  <div class="category-list">
+    <div class="category-item" data-account="bendavis354@gmail.com">
+      <div class="category-sender">E-ZPass NY</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Credit Card Payment Confirmation</strong> — $25.00 applied to account xxxxxx0357. Balance now $34.68. No action needed.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19df329e782b4283" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 13. WAITING/FYI -->
+  <div class="section-header">
+    <span class="section-title">Waiting / FYI</span>
+    <span class="section-count">7</span>
+  </div>
+
+  <div class="category-list">
+    <div class="category-item" data-account="ben@heartspringgardens.org">
+      <div class="category-sender">Matt Cain / Marc</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Re: Lecture</strong> — Thread about promoting Albert Schmidli's talk in the Anthroposophy Branch eNews. Matt flagged missing details on the flyer. CC'd only; no action for you.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19dd474ec1a480a1" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">ben@heartspringgardens.org</div>
+      </div>
+    </div>
+    <div class="category-item" data-account="ben@heartspringgardens.org">
+      <div class="category-sender">Uriel Pharmacy</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Light root</strong> — Mark at Uriel Pharmacy wrote to Marc Blachere about needing more light root (Dictamnus) for medicinal preparations. CC'd you and Andrea. FYI / potential growing opportunity.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19df39689f22aceb" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">ben@heartspringgardens.org</div>
+      </div>
+    </div>
+    <div class="category-item" data-account="ben@heartspringgardens.org">
+      <div class="category-sender">Calendly / Tiffany</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Thanks for your time!</strong> — Automated thank-you from Calendly confirming you attended a Verification Call with Tiffany Brown-Barino. No action needed.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19df35c8e9e7d805" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">ben@heartspringgardens.org</div>
+      </div>
+    </div>
+    <div class="category-item" data-account="bendavis354@gmail.com">
+      <div class="category-sender">Nancy Sciocchetti</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Re: Working with Mettabee Farm and Heart Spring Gardens</strong> — Nancy says they can wait for Elizabeth to return and asks whether to set a date now. See reply suggestion above.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19ddfd49b3bbb102" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+    <div class="category-item" data-account="bendavis354@gmail.com">
+      <div class="category-sender">Norbert / Triform</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Next meeting May 7th</strong> — Karma Study at Woodland this Thursday. Prepare lecture 4 up to p. 74. See calendar proposal above.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19df2d6eeae2461a" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+    <div class="category-item" data-account="bendavis354@gmail.com">
+      <div class="category-sender">USPS</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Daily Digest Mon 5/4</strong> — 3 mailpieces arriving today, 0 packages. FYI.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19df2c04ecd409f1" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+    <div class="category-item" data-account="bendavis354@gmail.com">
+      <div class="category-sender">King Grove / Steffen</div>
+      <div class="category-arrow">→</div>
+      <div>
+        <div class="category-detail"><strong>Fwd: Something Different</strong> — You forwarded a King Grove advocacy email to Steffen at mindfulag.org with a note that he's quoted. Awaiting reply.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19def27295d26686" target="_blank" class="category-link">View →</a>
+        <div class="category-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 14. NEWSLETTER/INFO -->
+  <div class="section-header">
+    <span class="section-title">Newsletter / Info</span>
+    <span class="section-count">13</span>
+  </div>
+
+  <div class="newsletter-block">
+    <ul class="newsletter-list">
+      <li><span>Berkshire Taconic Anthroposophy Branch — <em>Announcements May 4</em>, artwork by Christiana Williams</span> <span class="newsletter-sender"><a href="https://mail.google.com/mail/u/0/#inbox/19df3f0d5dc16de7" target="_blank" class="category-link">View →</a></span></li>
+      <li><span>u-lab / Presencing — <em>Reminder: Complete u-lab by May 31 &amp; What is Next</em></span> <span class="newsletter-sender"><a href="https://mail.google.com/mail/u/0/#inbox/19df3e29761a9253" target="_blank" class="category-link">View →</a></span></li>
+      <li><span>Inner Fire — <em>Spring/Summer Newsletter</em> (tapering &amp; psychotropic medication support)</span> <span class="newsletter-sender"><a href="https://mail.google.com/mail/u/0/#inbox/19df3b37be803806" target="_blank" class="category-link">View →</a></span></li>
+      <li><span>Healthy Alliance — <em>Weekly Social Care Network Rundown, May 4–8</em> (RWJF CBO funding opportunity noted)</span> <span class="newsletter-sender"><a href="https://mail.google.com/mail/u/0/#inbox/19df37c85c83388e" target="_blank" class="category-link">View →</a></span></li>
+      <li><span>Columbia County Today — <em>May 2026 new listings</em> (incl. 996 Dugway Rd, Chatham, $898K, 8.2 ac)</span> <span class="newsletter-sender"><a href="https://mail.google.com/mail/u/0/#inbox/19df48a3cb06e956" target="_blank" class="category-link">View →</a></span></li>
+      <li><span>Chatham CSD — <em>Faculty &amp; Staff Appreciation Week</em></span> <span class="newsletter-sender"><a href="https://mail.google.com/mail/u/0/#inbox/19df3c51c3c4d1d6" target="_blank" class="category-link">View →</a></span></li>
+      <li><span>Permies — <em>Rocket Mass Heater 8-DVD set now $24.50</em></span> <span class="newsletter-sender"><a href="https://mail.google.com/mail/u/0/#inbox/19df3d090caf37c0" target="_blank" class="category-link">View →</a></span></li>
+      <li><span>Peasantry School (Substack) — <em>The Book Sprouted Legs</em></span> <span class="newsletter-sender"><a href="https://mail.google.com/mail/u/0/#inbox/19df2ec401828002" target="_blank" class="category-link">View →</a></span></li>
+      <li><span>Rudolf Steiner Quotes — <em>Daily digest May 4, 2026</em> (Schiller verse on nature &amp; humanity)</span> <span class="newsletter-sender"><a href="https://mail.google.com/mail/u/0/#inbox/19df27f97b9bc2de" target="_blank" class="category-link">View →</a></span></li>
+      <li><span>King Grove Organic Farm — <em>2026 Fresh Blueberry Season Update</em> (demand exceeded supply this season)</span> <span class="newsletter-sender"><a href="https://mail.google.com/mail/u/0/#inbox/19df120728c539ba" target="_blank" class="category-link">View →</a></span></li>
+      <li><span>Mettabee Farm — <em>May 30th: Advanced Contra Dance 7:30 PM</em> (upcoming events &amp; camps)</span> <span class="newsletter-sender"><a href="https://mail.google.com/mail/u/0/#inbox/19defa0b15fcf0cf" target="_blank" class="category-link">View →</a></span></li>
+      <li><span>Claude Code (Anthropic) — <em>Ship your first major feature</em> + <em>Welcome to Claude Code</em></span> <span class="newsletter-sender"><a href="https://mail.google.com/mail/u/0/#inbox/19df381d94fc69c5" target="_blank" class="category-link">View →</a></span></li>
+      <li><span>King Grove — <em>Something Different</em> (advocacy / organic farming)</span> <span class="newsletter-sender"><a href="https://mail.google.com/mail/u/0/#inbox/19def27295d26686" target="_blank" class="category-link">View →</a></span></li>
+    </ul>
+  </div>
+
+  <!-- 15. SPAM/JUNK -->
+  <div class="section-header">
+    <span class="section-title">Spam / Junk</span>
+    <span class="section-count">6</span>
+  </div>
+
+  <div class="spam-block">
+    <ul class="spam-list">
+      <li><span class="spam-bullet">—</span> <span>Discover Card: "Ready to turn on your virtual card number?" (marketing)</span></li>
+      <li><span class="spam-bullet">—</span> <span>PenFed Credit Union: "Earn rewards: every purchase, every day" (promotional)</span></li>
+      <li><span class="spam-bullet">—</span> <span>Mohawk Honda: "We want to buy your vehicle" (unsolicited)</span></li>
+      <li><span class="spam-bullet">—</span> <span>Verve Coffee: "Cars &amp; Coffee with Magnus Walker" (promotional event)</span></li>
+      <li><span class="spam-bullet">—</span> <span>SoFi: "You could win $10K from your everyday shopping" (sweepstakes)</span></li>
+      <li><span class="spam-bullet">—</span> <span>Wells Fargo: "Take control of your auto loan" (promotional)</span></li>
+    </ul>
+  </div>
+
+  <!-- 16. STATS TABLE -->
+  <div class="section-header">
+    <span class="section-title">Totals by Account</span>
+  </div>
+
+  <table class="stats-table">
+    <thead>
+      <tr>
+        <th>Account</th>
+        <th>Urgent</th>
+        <th>Business</th>
+        <th>Personal</th>
+        <th>Financial</th>
+        <th>Waiting</th>
+        <th>Newsletter</th>
+        <th>Spam</th>
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:11px;">bendavis354@gmail.com</td>
+        <td>1</td><td>2</td><td>2</td><td>1</td><td>4</td><td>11</td><td>6</td><td><strong>27</strong></td>
+      </tr>
+      <tr>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:11px;">ben@heartspringgardens.org</td>
+        <td>0</td><td>4</td><td>0</td><td>0</td><td>3</td><td>2</td><td>0</td><td><strong>9</strong></td>
+      </tr>
+      <tr>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:11px;">benjamin@biodynamics.com</td>
+        <td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td><strong>2</strong></td>
+      </tr>
+      <tr style="background:#f5f5f0;font-weight:600;">
+        <td>Total</td>
+        <td>2</td><td>7</td><td>2</td><td>1</td><td>7</td><td>13</td><td>6</td><td><strong>38</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- 17. FOOTER -->
+  <div class="footer">
+    No emails sent automatically. All reply buttons open Gmail compose — you write and send.
+  </div>
+
+</div>
+
+<script>
+  function filterAccount(account) {
+    document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+    const activePill = document.querySelector('[data-filter="' + account + '"]');
+    if (activePill) activePill.classList.add('active');
+
+    document.querySelectorAll('[data-account]').forEach(el => {
+      if (account === 'all') {
+        el.style.display = '';
+      } else {
+        el.style.display = el.dataset.account === account ? '' : 'none';
+      }
+    });
+  }
+
+  function updateCalLink(eventId, calId) {
+    const link = document.getElementById('cal-link-' + eventId);
+    if (!link) return;
+    try {
+      const url = new URL(link.href);
+      url.searchParams.set('src', decodeURIComponent(calId));
+      link.href = url.toString();
+    } catch(e) {}
+  }
+</script>
+</body>
+</html>
