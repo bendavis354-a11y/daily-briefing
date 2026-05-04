@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily Briefing — May 3, 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --cream: #FAFAF5;
+  --gold: #A8843A;
+  --red: #B83A3A;
+  --green: #3A7556;
+  --blue: #3D5DAA;
+  --white: #FFFFFF;
+  --text: #1A1A1A;
+  --muted: #6B6B6B;
+  --border: #E8E4D8;
+  --shadow: 0 1px 4px rgba(0,0,0,0.07);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', sans-serif; background: var(--cream); color: var(--text); font-size: 14px; line-height: 1.6; }
+
+/* Header */
+.header { position: sticky; top: 0; z-index: 100; background: var(--white); border-bottom: 1px solid var(--border); padding: 14px 32px; display: flex; align-items: center; justify-content: space-between; }
+.header-title { font-family: 'Instrument Serif', serif; font-size: 20px; }
+.header-right { display: flex; gap: 12px; align-items: center; }
+.header-date { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); }
+.badge { background: var(--red); color: white; border-radius: 20px; padding: 3px 12px; font-size: 12px; font-weight: 700; }
+
+/* Layout */
+.container { max-width: 860px; margin: 0 auto; padding: 32px 24px 64px; }
+
+/* Hero */
+.hero { margin-bottom: 28px; }
+.hero-greeting { font-family: 'Instrument Serif', serif; font-size: 44px; font-style: italic; margin-bottom: 4px; }
+.hero-sub { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); }
+
+/* Stats row */
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+.stat { background: var(--white); border-radius: 10px; padding: 16px; text-align: center; border: 1px solid var(--border); box-shadow: var(--shadow); }
+.stat-n { font-size: 30px; font-weight: 700; line-height: 1; margin-bottom: 4px; }
+.stat-l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.stat.u .stat-n { color: var(--red); }
+.stat.c .stat-n { color: var(--green); }
+.stat.r .stat-n { color: var(--blue); }
+.stat.t .stat-n { color: var(--gold); }
+
+/* Filter pills */
+.pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 28px; }
+.pill { padding: 6px 16px; border-radius: 20px; border: 1px solid var(--border); background: var(--white); cursor: pointer; font-size: 12px; font-weight: 500; color: var(--muted); font-family: inherit; transition: all 0.15s; }
+.pill.active { background: var(--text); color: white; border-color: var(--text); }
+
+/* Section headers */
+.sh { display: flex; align-items: center; gap: 10px; margin: 32px 0 14px; }
+.st { font-family: 'Instrument Serif', serif; font-size: 22px; }
+.sc { background: var(--border); border-radius: 10px; padding: 2px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
+
+/* Account chip */
+.chip { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-family: 'JetBrains Mono', monospace; background: var(--border); color: var(--muted); margin-bottom: 8px; }
+
+/* Email cards */
+.email-card { background: var(--white); border-radius: 10px; padding: 18px 20px; margin-bottom: 10px; border: 1px solid var(--border); border-left: 4px solid var(--border); box-shadow: var(--shadow); }
+.email-card.urgent { border-left-color: var(--red); }
+.email-from { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+.email-subject { font-size: 15px; margin-bottom: 6px; }
+.email-summary { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+.email-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.tag { padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; text-decoration: none; }
+.tag.dl { background: #FDEAEA; color: var(--red); }
+.tag.lnk { background: #EAF0FD; color: var(--blue); }
+.tag.lnk:hover { text-decoration: underline; }
+
+/* Action cards */
+.action-card { background: var(--white); border-radius: 10px; padding: 18px 20px; margin-bottom: 10px; border: 1px solid var(--border); border-left: 4px solid var(--border); box-shadow: var(--shadow); }
+.action-card.cal { border-left-color: var(--green); }
+.action-card.rep { border-left-color: var(--blue); }
+.at { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px; }
+.at.cal { color: var(--green); }
+.at.rep { color: var(--blue); }
+.action-title { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+.action-detail { color: var(--muted); font-size: 13px; margin-bottom: 3px; }
+.action-source { font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--muted); margin: 8px 0; }
+.action-btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.btn { padding: 7px 14px; border-radius: 7px; font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; border: 1px solid var(--border); background: var(--white); color: var(--text); font-family: inherit; transition: all 0.15s; display: inline-block; }
+.btn:hover { background: var(--cream); }
+.btn.p { background: var(--blue); color: white; border-color: var(--blue); }
+.btn.p:hover { background: #2d4d9a; }
+.action-card.cal .btn.p { background: var(--green); border-color: var(--green); }
+.action-card.cal .btn.p:hover { background: #2d5f45; }
+.cal-sel { padding: 6px 10px; border-radius: 7px; border: 1px solid var(--border); font-size: 12px; background: var(--white); color: var(--text); font-family: inherit; cursor: pointer; }
+
+/* Schedule */
+.schedule-wrap { background: var(--white); border-radius: 10px; border: 1px solid var(--border); box-shadow: var(--shadow); overflow: hidden; }
+.schedule-ev { display: flex; align-items: flex-start; gap: 16px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.schedule-ev:last-child { border-bottom: none; }
+.sched-time { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); min-width: 140px; padding-top: 2px; }
+.sched-info { flex: 1; }
+.sched-title { font-weight: 600; font-size: 14px; margin-bottom: 3px; }
+.sched-cal { font-size: 12px; font-weight: 500; margin-bottom: 2px; }
+.sched-loc { font-size: 12px; color: var(--muted); }
+.sched-att { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.sched-link { color: var(--blue); text-decoration: none; font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 6px; background: #EAF0FD; white-space: nowrap; }
+.sched-link:hover { background: #d5e4fb; }
+
+/* Todo */
+.todo-wrap { background: var(--white); border-radius: 10px; border: 1px solid var(--border); box-shadow: var(--shadow); overflow: hidden; }
+.todo-item { display: flex; gap: 14px; align-items: flex-start; padding: 14px 20px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
+.todo-item:last-child { border-bottom: none; }
+.todo-item:hover { background: var(--cream); }
+.todo-check { width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; transition: all 0.15s; }
+.todo-check svg { opacity: 0; transition: opacity 0.15s; }
+.todo-item.checked .todo-check { background: var(--green); border-color: var(--green); }
+.todo-item.checked .todo-check svg { opacity: 1; }
+.todo-item.checked .todo-text { text-decoration: line-through; color: var(--muted); }
+.todo-pri { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px; }
+.todo-pri.hi { background: #FDEAEA; color: var(--red); }
+.todo-pri.md { background: #FDF3E0; color: #8B6020; }
+.todo-pri.lo { background: #E8F4ED; color: var(--green); }
+.todo-text { font-size: 13px; margin-bottom: 2px; }
+.todo-acc { font-size: 10px; font-family: 'JetBrains Mono', monospace; color: var(--muted); margin-top: 2px; }
+
+/* Category lists */
+.cat-list { background: var(--white); border-radius: 10px; border: 1px solid var(--border); box-shadow: var(--shadow); overflow: hidden; }
+.cat-item { display: flex; gap: 12px; align-items: flex-start; padding: 13px 20px; border-bottom: 1px solid var(--border); }
+.cat-item:last-child { border-bottom: none; }
+.cat-sender { font-weight: 600; font-size: 13px; min-width: 160px; padding-top: 1px; flex-shrink: 0; }
+.cat-arrow { color: #C8C4B8; font-size: 16px; padding-top: 1px; }
+.cat-detail { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.cat-link { font-size: 11px; color: var(--blue); text-decoration: none; font-weight: 500; }
+.cat-link:hover { text-decoration: underline; }
+.cat-acc { font-size: 10px; font-family: 'JetBrains Mono', monospace; color: var(--muted); margin-top: 3px; }
+
+/* Summary blocks */
+.summary-block { background: var(--white); border-radius: 10px; border: 1px solid var(--border); box-shadow: var(--shadow); padding: 4px 0; }
+.summary-block ul { list-style: none; }
+.summary-block li { padding: 10px 20px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.summary-block li:last-child { border-bottom: none; }
+.summary-block li span { flex: 1; }
+
+/* Stats table */
+.stats-table { width: 100%; border-collapse: collapse; background: var(--white); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--border); }
+.stats-table th { background: var(--cream); padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); border-bottom: 1px solid var(--border); }
+.stats-table td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--border); }
+.stats-table tr:last-child td { border-bottom: none; background: var(--cream); }
+
+/* Footer */
+.footer { text-align: center; padding: 28px 0 8px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); margin-top: 40px; }
+
+.filtered-out { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-title">Daily Briefing</div>
+  <div class="header-right">
+    <span class="header-date">Sun May 3, 2026 · 4:30 PM EST</span>
+    <span class="badge">2 Urgent</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-greeting">Good evening, Ben.</div>
+    <div class="hero-sub">Sunday, May 3, 2026 &nbsp;·&nbsp; Tomorrow: Monday, May 4 &nbsp;·&nbsp; 26 threads scanned</div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat u"><div class="stat-n">2</div><div class="stat-l">Urgent</div></div>
+    <div class="stat c"><div class="stat-n">1</div><div class="stat-l">Events Tomorrow</div></div>
+    <div class="stat r"><div class="stat-n">4</div><div class="stat-l">Suggested Replies</div></div>
+    <div class="stat t"><div class="stat-n">5</div><div class="stat-l">To-Dos</div></div>
+  </div>
+
+  <!-- Filter Pills -->
+  <div class="pills">
+    <button class="pill active" onclick="filterAcc('all',this)">All Accounts</button>
+    <button class="pill" onclick="filterAcc('bendavis354@gmail.com',this)">bendavis354@gmail.com</button>
+    <button class="pill" onclick="filterAcc('ben@heartspringgardens.org',this)">ben@heartspringgardens.org</button>
+    <button class="pill" onclick="filterAcc('benjamin@biodynamics.com',this)">benjamin@biodynamics.com</button>
+  </div>
+
+  <!-- ── URGENT ── -->
+  <div class="sh">
+    <div class="st" style="color:var(--red)">Urgent</div>
+    <span class="sc">2</span>
+  </div>
+
+  <div class="email-card urgent" data-account="bendavis354@gmail.com">
+    <span class="chip">bendavis354@gmail.com</span>
+    <div class="email-from">sanmarko@gmail.com</div>
+    <div class="email-subject">Follow up to letter of 12/30/25 and going forward</div>
+    <div class="email-summary">This person was originally CC&#8217;d on a letter sent to Ben on December 30th. After 4 months without a response, they&#8217;re now reaching out to Ben directly, asking if they can move the conversation forward. Needs acknowledgment today.</div>
+    <div class="email-meta">
+      <span class="tag dl">4-Month Overdue</span>
+      <a href="https://mail.google.com/mail/u/0/#inbox/19dee3e86bb68024" target="_blank" class="tag lnk">View in Gmail &rarr;</a>
+    </div>
+  </div>
+
+  <div class="email-card urgent" data-account="benjamin@biodynamics.com">
+    <span class="chip">benjamin@biodynamics.com</span>
+    <div class="email-from">Dorothy (dorothy@biodynamics.com) + Coree</div>
+    <div class="email-subject">agenda May 6 &mdash; Biodynamics Board Meeting</div>
+    <div class="email-summary">Dorothy circulated the draft agenda for the May 6 board meeting and asked everyone to add or edit <strong>by Monday</strong> (tomorrow). Coree has already added a note about the off-week scheduling question. Ben needs to review and contribute any agenda items before Dorothy finalizes it.</div>
+    <div class="email-meta">
+      <span class="tag dl">Deadline: Mon May 4</span>
+      <a href="https://mail.google.com/mail/u/0/#inbox/19dea8428c994ad1" target="_blank" class="tag lnk">View in Gmail &rarr;</a>
+    </div>
+  </div>
+
+  <!-- ── TOMORROW'S SCHEDULE ── -->
+  <div class="sh">
+    <div class="st" style="color:var(--green)">Tomorrow&#8217;s Schedule</div>
+    <span class="sc">1 Event &mdash; Mon May 4</span>
+  </div>
+
+  <div class="schedule-wrap">
+    <div class="schedule-ev">
+      <div class="sched-time">9:30 &ndash; 9:50 AM</div>
+      <div class="sched-info">
+        <div class="sched-title">Verification Call &mdash; Heart Spring Gardens</div>
+        <div class="sched-cal" style="color:var(--green)">&#9679; Personal Calendar (bendavis354@gmail.com)</div>
+        <div class="sched-loc">&#128222; Phone call</div>
+        <div class="sched-att">With: Tiffany Brown-Barino (tbrown-barino@rockpa.org) &nbsp;&middot;&nbsp; ben@heartspringgardens.org also invited &nbsp;&middot;&nbsp; Booked via Calendly</div>
+      </div>
+      <a href="https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2aDMzZ2dobzc1MjQyaDFpOGdzNDhncGc2NG8zMGMxZzYwbzMwYzFnNjBvMzBjMWc2MG8zMmMxZzYwbzMwYzFnODkwazJkcHA2ZDJrYWNpMjcwcTRhaGhrNzUwamNncGg4Y29rNGUyNTY0b2pjZDIyNmtxZyBiZW5kYXZpczM1NEBt&ctz=America/New_York" target="_blank" class="sched-link">Open &rarr;</a>
+    </div>
+  </div>
+
+  <!-- ── CALENDAR PROPOSALS ── -->
+  <div class="sh">
+    <div class="st" style="color:var(--green)">Calendar Event Proposals</div>
+    <span class="sc">3</span>
+  </div>
+
+  <div class="action-card cal" data-account="benjamin@biodynamics.com" id="event-1">
+    <span class="chip">benjamin@biodynamics.com</span>
+    <div class="at cal">Calendar Event</div>
+    <div class="action-title">Biodynamics Board Meeting</div>
+    <div class="action-detail">Wednesday, May 6, 2026 &nbsp;&middot;&nbsp; Time TBD (placeholder: 10:00 AM &ndash; 12:00 PM)</div>
+    <div class="action-detail">Dorothy&#8217;s agenda is being finalized Monday &mdash; add the meeting to your calendar so it doesn&#8217;t get missed.</div>
+    <div class="action-source">Source: dorothy@biodynamics.com &rarr; agenda May 6</div>
+    <div class="action-btns">
+      <select class="cal-sel" onchange="updateCal('event-1',this.value)">
+        <option value="bendavis354%40gmail.com">Personal (bendavis354)</option>
+        <option value="ben%40heartspringgardens.org">Heart Spring Gardens</option>
+      </select>
+      <a href="https://calendar.google.com/calendar/render?action=TEMPLATE&text=Biodynamics%20Board%20Meeting&dates=20260506T100000%2F20260506T120000&details=Draft%20agenda%20prepared%20by%20Dorothy%20%E2%80%94%20see%20%22agenda%20May%206%22%20email%20thread%20for%20details.&src=bendavis354%40gmail.com" target="_blank" class="btn p" id="cal-link-event-1">Add to Calendar</a>
+      <button class="btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
+    </div>
+  </div>
+
+  <div class="action-card cal" data-account="bendavis354@gmail.com" id="event-2">
+    <span class="chip">bendavis354@gmail.com</span>
+    <div class="at cal">Calendar Event</div>
+    <div class="action-title">Bare Foot Path Meeting</div>
+    <div class="action-detail">Wed May 13 or Thu May 14 &nbsp;&middot;&nbsp; 11:00 AM or 4:00 PM &nbsp;&middot;&nbsp; Mettabee Farm</div>
+    <div class="action-detail">Mariola says she&#8217;s free either date. Elizabeth, Jean-David, and Mariola are all in. Confirm your preferred date, then block the time. (Placeholder: May 13 at 11 AM.)</div>
+    <div class="action-source">Source: radiantmtn@aol.com &rarr; Re: Bare Foot Path Meeting</div>
+    <div class="action-btns">
+      <select class="cal-sel" onchange="updateCal('event-2',this.value)">
+        <option value="bendavis354%40gmail.com">Personal (bendavis354)</option>
+        <option value="ben%40heartspringgardens.org">Heart Spring Gardens</option>
+      </select>
+      <a href="https://calendar.google.com/calendar/render?action=TEMPLATE&text=Bare%20Foot%20Path%20Meeting&dates=20260513T110000%2F20260513T120000&details=Walk%20the%20path%20and%20consider%20next%20steps%20with%20Elizabeth%2C%20Jean-David%2C%20and%20Mariola.%20Confirm%20date%20first.&location=Mettabee%20Farm&src=bendavis354%40gmail.com" target="_blank" class="btn p" id="cal-link-event-2">Add to Calendar</a>
+      <button class="btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
+    </div>
+  </div>
+
+  <div class="action-card cal" data-account="bendavis354@gmail.com" id="event-3">
+    <span class="chip">bendavis354@gmail.com</span>
+    <div class="at cal">Calendar Event</div>
+    <div class="action-title">Advanced Contra Dance &mdash; Mettabee Farm</div>
+    <div class="action-detail">Saturday, May 30, 2026 &nbsp;&middot;&nbsp; 7:30 PM &ndash; 10:00 PM</div>
+    <div class="action-detail">Mettabee Farm is hosting an advanced-level contra dance session. Also: First Saturday Contra Dance is May 2 (past) and Ceremonial Sweat Lodge was May 1.</div>
+    <div class="action-source">Source: events@mettabeefarm.com &rarr; May 30th: Advanced Contra Dance 7:30 pm</div>
+    <div class="action-btns">
+      <select class="cal-sel" onchange="updateCal('event-3',this.value)">
+        <option value="bendavis354%40gmail.com">Personal (bendavis354)</option>
+        <option value="ben%40heartspringgardens.org">Heart Spring Gardens</option>
+      </select>
+      <a href="https://calendar.google.com/calendar/render?action=TEMPLATE&text=Advanced%20Contra%20Dance%20%E2%80%94%20Mettabee%20Farm&dates=20260530T193000%2F20260530T220000&details=Advanced%20Contra%20Dance%20at%20Mettabee%20Farm.&location=Mettabee%20Farm&src=bendavis354%40gmail.com" target="_blank" class="btn p" id="cal-link-event-3">Add to Calendar</a>
+      <button class="btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
+    </div>
+  </div>
+
+  <!-- ── SUGGESTED REPLIES ── -->
+  <div class="sh">
+    <div class="st" style="color:var(--blue)">Suggested Replies</div>
+    <span class="sc">4</span>
+  </div>
+
+  <div class="action-card rep" data-account="bendavis354@gmail.com">
+    <span class="chip">bendavis354@gmail.com</span>
+    <div class="at rep">Suggested Reply</div>
+    <div class="action-title">Respond to 4-month follow-up</div>
+    <div class="action-detail">Someone has been waiting since December 30th. They&#8217;re now reaching out directly. Even a brief acknowledgment today would matter significantly.</div>
+    <div class="action-source">Source: sanmarko@gmail.com &rarr; Follow up to letter of 12/30/25 and going forward</div>
+    <div class="action-btns">
+      <a href="https://mail.google.com/mail/?view=cm&fs=1&to=sanmarko%40gmail.com&su=Re%3A%20Follow%20up%20to%20letter%20of%2012%2F30%2F25%20and%20going%20forward&body=Hi%2C%0A%0AApologies%20for%20the%20delayed%20response%20%E2%80%94%20I%27m%20sorry%20you%20haven%27t%20heard%20back.%20I%27d%20like%20to%20continue%20this%20conversation.%20Could%20you%20briefly%20remind%20me%20of%20the%20key%20questions%20or%20requests%20from%20your%20original%20letter%20so%20I%20can%20address%20them%20directly%3F%0A%0AWarm%20regards%2C%0ABen" target="_blank" class="btn p">Reply in Gmail</a>
+      <a href="https://mail.google.com/mail/u/0/#inbox/19dee3e86bb68024" target="_blank" class="btn">View Thread</a>
+      <button class="btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
+    </div>
+  </div>
+
+  <div class="action-card rep" data-account="benjamin@biodynamics.com">
+    <span class="chip">benjamin@biodynamics.com</span>
+    <div class="at rep">Suggested Reply</div>
+    <div class="action-title">Add edits to Biodynamics board agenda</div>
+    <div class="action-detail">Dorothy finalizes the agenda tomorrow (Monday). Coree has already replied. Ben should send any additions or edits before Monday morning.</div>
+    <div class="action-source">Source: dorothy@biodynamics.com &rarr; agenda May 6</div>
+    <div class="action-btns">
+      <a href="https://mail.google.com/mail/?view=cm&fs=1&to=dorothy%40biodynamics.com&cc=carin%40biodynamics.com%2Ccoree%40biodynamics.com%2Cmmueller%40biodynamics.com&su=Re%3A%20agenda%20May%206&body=Hi%20Dorothy%20and%20all%2C%0A%0AThanks%20for%20getting%20the%20agenda%20started.%20Here%20are%20my%20additions%2Fedits%3A%0A%0A%5BAdd%20your%20items%20here%5D%0A%0ALooking%20forward%20to%20Wednesday%2C%0ABen" target="_blank" class="btn p">Reply in Gmail</a>
+      <a href="https://mail.google.com/mail/u/0/#inbox/19dea8428c994ad1" target="_blank" class="btn">View Thread</a>
+      <button class="btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
+    </div>
+  </div>
+
+  <div class="action-card rep" data-account="bendavis354@gmail.com">
+    <span class="chip">bendavis354@gmail.com</span>
+    <div class="at rep">Suggested Reply</div>
+    <div class="action-title">Confirm Bare Foot Path Meeting date</div>
+    <div class="action-detail">Mariola is available May 13 or 14 at 11 AM or 4 PM. Elizabeth and Jean-David are also involved. Pick a slot and lock it in so everyone can plan.</div>
+    <div class="action-source">Source: radiantmtn@aol.com &rarr; Re: Bare Foot Path Meeting</div>
+    <div class="action-btns">
+      <a href="https://mail.google.com/mail/?view=cm&fs=1&to=radiantmtn%40aol.com&cc=jeandavidderreumaux%40gmail.com%2Celizabeth%40mettabeefarm.com&su=Re%3A%20Bare%20Foot%20Path%20Meeting&body=Hi%20Mariola%20and%20Elizabeth%2C%0A%0AWonderful%20%E2%80%94%20thank%20you%20for%20the%20update.%20I%20can%20do%20%5BWed%20May%2013%20%2F%20Thu%20May%2014%5D%20at%20%5B11%20AM%20%2F%204%20PM%5D.%20Please%20let%20me%20know%20what%20works%20best%20for%20everyone%20and%20I%27ll%20confirm.%0A%0AWarm%20regards%2C%0ABen" target="_blank" class="btn p">Reply in Gmail</a>
+      <a href="https://mail.google.com/mail/u/0/#inbox/19ddf41cd71e4f9d" target="_blank" class="btn">View Thread</a>
+      <button class="btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
+    </div>
+  </div>
+
+  <div class="action-card rep" data-account="bendavis354@gmail.com">
+    <span class="chip">bendavis354@gmail.com</span>
+    <div class="at rep">Suggested Reply</div>
+    <div class="action-title">Send condolences &mdash; Matias Baker</div>
+    <div class="action-detail">Matias (Matthew Todd) Baker, 48, passed away April 23 after a long battle with cancer, surrounded by family and his partner Svava Carlsen. A brief note to the group would be meaningful.</div>
+    <div class="action-source">Source: danoakcollett@yahoo.com &rarr; matias baker obituary</div>
+    <div class="action-btns">
+      <a href="https://mail.google.com/mail/?view=cm&fs=1&to=danoakcollett%40yahoo.com&su=Re%3A%20matias%20baker%20obituary&body=Dear%20Dan%20and%20friends%2C%0A%0AThank%20you%20for%20letting%20us%20know.%20I%20am%20deeply%20saddened%20to%20hear%20of%20Matias%E2%80%99s%20passing.%20He%20was%20a%20remarkable%20person%20and%20will%20be%20greatly%20missed.%20My%20heart%20goes%20out%20to%20Jonathan%2C%20Donna%2C%20Svava%2C%20and%20all%20who%20loved%20him.%0A%0AWarm%20regards%2C%0ABen" target="_blank" class="btn p">Reply in Gmail</a>
+      <a href="https://mail.google.com/mail/u/0/#inbox/19deb89002833edf" target="_blank" class="btn">View Thread</a>
+      <button class="btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
+    </div>
+  </div>
+
+  <!-- ── TO-DO LIST ── -->
+  <div class="sh">
+    <div class="st" style="color:var(--gold)">To-Do List</div>
+    <span class="sc">5</span>
+  </div>
+
+  <div class="todo-wrap">
+    <div class="todo-item" data-account="benjamin@biodynamics.com" onclick="this.classList.toggle('checked')">
+      <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div>
+        <div class="todo-pri hi">High &middot; Due Tomorrow</div>
+        <div class="todo-text">Review and reply to Biodynamics May 6 board agenda &mdash; Dorothy finalizes it Monday morning</div>
+        <div class="todo-acc">benjamin@biodynamics.com</div>
+      </div>
+    </div>
+    <div class="todo-item" data-account="bendavis354@gmail.com" onclick="this.classList.toggle('checked')">
+      <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div>
+        <div class="todo-pri hi">High &middot; Overdue</div>
+        <div class="todo-text">Reply to sanmarko@gmail.com &mdash; 4-month-old unanswered follow-up letter</div>
+        <div class="todo-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+    <div class="todo-item" data-account="bendavis354@gmail.com" onclick="this.classList.toggle('checked')">
+      <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div>
+        <div class="todo-pri hi">High &middot; Tomorrow 9:30 AM</div>
+        <div class="todo-text">Prepare for Verification Call with Tiffany Brown-Barino re: Heart Spring Gardens (phone)</div>
+        <div class="todo-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+    <div class="todo-item" data-account="bendavis354@gmail.com" onclick="this.classList.toggle('checked')">
+      <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div>
+        <div class="todo-pri md">Medium</div>
+        <div class="todo-text">Confirm Bare Foot Path Meeting &mdash; reply to Mariola with preferred date (May 13 or 14)</div>
+        <div class="todo-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+    <div class="todo-item" data-account="bendavis354@gmail.com" onclick="this.classList.toggle('checked')">
+      <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div>
+        <div class="todo-pri lo">Low</div>
+        <div class="todo-text">Send condolences for Matias Baker (passed April 23)</div>
+        <div class="todo-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── BUSINESS ── -->
+  <div class="sh">
+    <div class="st">Business</div>
+    <span class="sc">3</span>
+  </div>
+
+  <div class="cat-list">
+    <div class="cat-item" data-account="bendavis354@gmail.com">
+      <div class="cat-sender">info@heartspringgardens.org</div>
+      <div class="cat-arrow">&rarr;</div>
+      <div>
+        <div class="cat-detail"><strong>[Test Email] Spring Greetings from Heart Spring Gardens</strong> &mdash; Five test sends of a spring newsletter draft arriving at bendavis354. Ben appears to be testing the org&#8217;s new email campaign. All five are identical.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19deae9355897e22" target="_blank" class="cat-link">View &rarr;</a>
+        <div class="cat-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+    <div class="cat-item" data-account="bendavis354@gmail.com">
+      <div class="cat-sender">Steffen (mindfulag.org)</div>
+      <div class="cat-arrow">&rarr;</div>
+      <div>
+        <div class="cat-detail"><strong>Fwd: Lead What&#8217;s Next &mdash; 4-Day Immersive Leadership Program</strong> &mdash; Steffen forwarded a program from Katrin Kaeufer at presencing.org. Likely relevant given shared networks; worth a look if interested in transformative leadership.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19deed919c0d0261" target="_blank" class="cat-link">View &rarr;</a>
+        <div class="cat-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+    <div class="cat-item" data-account="bendavis354@gmail.com">
+      <div class="cat-sender">King Grove Organic Farm</div>
+      <div class="cat-arrow">&rarr;</div>
+      <div>
+        <div class="cat-detail"><strong>Something Different + Ben&#8217;s forward to Steffen</strong> &mdash; King Grove sent an unusual off-schedule email. Ben forwarded it to Steffen with the note: &#8220;Maybe you get these? You&#8217;re quoted!&#8221;</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19def27295d26686" target="_blank" class="cat-link">View &rarr;</a>
+        <div class="cat-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PERSONAL ── -->
+  <div class="sh">
+    <div class="st">Personal</div>
+    <span class="sc">4</span>
+  </div>
+
+  <div class="cat-list">
+    <div class="cat-item" data-account="bendavis354@gmail.com">
+      <div class="cat-sender">Dan Oak Collett</div>
+      <div class="cat-arrow">&rarr;</div>
+      <div>
+        <div class="cat-detail"><strong>matias baker obituary</strong> &mdash; Matias (Matthew Todd) Baker, 48, passed away April 23 after a long battle with cancer, surrounded by his parents Jonathan and Donna Baker and partner Svava Carlsen. Community mourning.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19deb89002833edf" target="_blank" class="cat-link">View &rarr;</a>
+        <div class="cat-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+    <div class="cat-item" data-account="bendavis354@gmail.com">
+      <div class="cat-sender">switters50@msn.com</div>
+      <div class="cat-arrow">&rarr;</div>
+      <div>
+        <div class="cat-detail"><strong>Fwd: Bill Davis shared a photo with you</strong> &mdash; Family forward of a Google Photos share from Bill Davis. Sent with enthusiasm (&#8220;This is exciting!&#8221;) to Ben, Lauren, and DavisFarr.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19deefc25d9e21ed" target="_blank" class="cat-link">View &rarr;</a>
+        <div class="cat-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+    <div class="cat-item" data-account="bendavis354@gmail.com">
+      <div class="cat-sender">Mariola (radiantmtn)</div>
+      <div class="cat-arrow">&rarr;</div>
+      <div>
+        <div class="cat-detail"><strong>Re: Bare Foot Path Meeting</strong> &mdash; Mariola can meet May 13 or 14 at 11 AM or 4 PM. Originated from Elizabeth&#8217;s invite to walk the Bare Foot Path at Mettabee Farm. Response needed to confirm date.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19ddf41cd71e4f9d" target="_blank" class="cat-link">View &rarr;</a>
+        <div class="cat-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+    <div class="cat-item" data-account="bendavis354@gmail.com">
+      <div class="cat-sender">Hawthorne Valley School</div>
+      <div class="cat-arrow">&rarr;</div>
+      <div>
+        <div class="cat-detail"><strong>HVS Weekly Update 05-03-2026</strong> &mdash; Weekly school digest covering announcements, classroom life, athletics, and upcoming events.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19ded48740bd393c" target="_blank" class="cat-link">View &rarr;</a>
+        <div class="cat-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── FINANCIAL ── -->
+  <div class="sh">
+    <div class="st">Financial</div>
+    <span class="sc">1</span>
+  </div>
+
+  <div class="cat-list">
+    <div class="cat-item" data-account="bendavis354@gmail.com">
+      <div class="cat-sender">SoFi</div>
+      <div class="cat-arrow">&rarr;</div>
+      <div>
+        <div class="cat-detail"><strong>Unlock new ways to save on your mortgage</strong> &mdash; Promotional email about mortgage options with down payments as low as 3&ndash;5%. Not urgent.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19def029a6804ec1" target="_blank" class="cat-link">View &rarr;</a>
+        <div class="cat-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── WAITING / FYI ── -->
+  <div class="sh">
+    <div class="st">Waiting / FYI</div>
+    <span class="sc">1</span>
+  </div>
+
+  <div class="cat-list">
+    <div class="cat-item" data-account="bendavis354@gmail.com">
+      <div class="cat-sender">Google Calendar</div>
+      <div class="cat-arrow">&rarr;</div>
+      <div>
+        <div class="cat-detail"><strong>Notification: Verification Call @ Mon May 4, 9:30&ndash;9:50 AM</strong> &mdash; Calendar invite notification from Tiffany Brown-Barino via Calendly re: Heart Spring Gardens verification. Already confirmed and on your calendar &mdash; no action needed.</div>
+        <a href="https://mail.google.com/mail/u/0/#inbox/19dee084f51a5f9c" target="_blank" class="cat-link">View &rarr;</a>
+        <div class="cat-acc">bendavis354@gmail.com</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── NEWSLETTERS ── -->
+  <div class="sh">
+    <div class="st">Newsletters &amp; Info</div>
+    <span class="sc">11</span>
+  </div>
+
+  <div class="summary-block" data-account="bendavis354@gmail.com">
+    <ul>
+      <li><span><strong>Mettabee Farm</strong> &mdash; Upcoming events: Sweat Lodge (May 1), Contra Dance (May 2), Advanced Contra Dance (May 30 at 7:30 PM)</span><a href="https://mail.google.com/mail/u/0/#inbox/19defa0b15fcf0cf" target="_blank" class="cat-link">View &rarr;</a></li>
+      <li><span><strong>Martin Shaw (Substack)</strong> &mdash; &#8220;Your Captivity Is Over&#8221; &mdash; essay on why the redemptive matters</span><a href="https://mail.google.com/mail/u/0/#inbox/19decdee6814a514" target="_blank" class="cat-link">View &rarr;</a></li>
+      <li><span><strong>The Guardian</strong> &mdash; &#8220;A glimmer of hope for the world&#8221; &mdash; authoritarians vs. the free press</span><a href="https://mail.google.com/mail/u/0/#inbox/19ded18155a91e7b" target="_blank" class="cat-link">View &rarr;</a></li>
+      <li><span><strong>Permies</strong> &mdash; Biochar deep-dive from Tim &mdash; turning brush into soil amendment</span><a href="https://mail.google.com/mail/u/0/#inbox/19deebfe82d40148" target="_blank" class="cat-link">View &rarr;</a></li>
+      <li><span><strong>Rudolf Steiner Quotes</strong> &mdash; Daily digest May 3 &mdash; on the appearance of the true human form in the Atlantean epoch</span><a href="https://mail.google.com/mail/u/0/#inbox/19ded50d875d91d6" target="_blank" class="cat-link">View &rarr;</a></li>
+      <li><span><strong>SteinerBooks</strong> &mdash; &#8220;My heart is fresh and fearless&#8221; &mdash; new titles from Peter Selg and Torin Finser</span><a href="https://mail.google.com/mail/u/0/#inbox/19ded81853fa38a6" target="_blank" class="cat-link">View &rarr;</a></li>
+      <li><span><strong>Meaghan Wilson (Substack)</strong> &mdash; &#8220;It&#8217;s 3am bookclub time!&#8221; &mdash; perimenopause, culture, and late-night musings</span><a href="https://mail.google.com/mail/u/0/#inbox/19deb992c73a6328" target="_blank" class="cat-link">View &rarr;</a></li>
+      <li><span><strong>Glomer.com</strong> &mdash; German bookshop newsletter: new releases, reading paths, and a staff recommendation</span><a href="https://mail.google.com/mail/u/0/#inbox/19dec361a20450a8" target="_blank" class="cat-link">View &rarr;</a></li>
+      <li><span><strong>Proctors Collaborative</strong> &mdash; May events at Proctors, Capital Repertory Theatre, and Universal Preservation Hall</span><a href="https://mail.google.com/mail/u/0/#inbox/19deb5981d4aa1c1" target="_blank" class="cat-link">View &rarr;</a></li>
+      <li><span><strong>Claude / Anthropic</strong> (to ben@heartspringgardens.org) &mdash; &#8220;Using Claude for your everyday life (4/5)&#8221; &mdash; personal use tips</span><a href="https://mail.google.com/mail/u/0/#inbox/19deed0ad0babba5" target="_blank" class="cat-link">View &rarr;</a></li>
+      <li><span><strong>Verve Coffee</strong> &mdash; Opt out of Mother&#8217;s Day email series if desired</span><a href="https://mail.google.com/mail/u/0/#inbox/19dee5b400cb725d" target="_blank" class="cat-link">View &rarr;</a></li>
+    </ul>
+  </div>
+
+  <!-- ── SPAM / JUNK ── -->
+  <div class="sh">
+    <div class="st">Spam / Junk</div>
+    <span class="sc">4</span>
+  </div>
+
+  <div class="summary-block" data-account="bendavis354@gmail.com">
+    <ul>
+      <li><span><strong>Best Buy</strong> (to ben@heartspringgardens.org) &mdash; Open-box major appliances promotion, up to 60% off</span><a href="https://mail.google.com/mail/u/0/#inbox/19deef2ed839b038" target="_blank" class="cat-link">View &rarr;</a></li>
+      <li><span><strong>SquadLocker</strong> &mdash; Last day of May Day Sale, codes MAYDAY10 / MAYDAY20 expire tonight</span><a href="https://mail.google.com/mail/u/0/#inbox/19dee187fa4895f1" target="_blank" class="cat-link">View &rarr;</a></li>
+      <li><span><strong>Lowe&#8217;s</strong> &mdash; Sunday deals + Mother&#8217;s Day member gift promo</span><a href="https://mail.google.com/mail/u/0/#inbox/19dedfbc85e79209" target="_blank" class="cat-link">View &rarr;</a></li>
+      <li><span><strong>NY Dept. of Labor</strong> &mdash; Automated AI-powered job match recommendations</span><a href="https://mail.google.com/mail/u/0/#inbox/19def3c84622d1b4" target="_blank" class="cat-link">View &rarr;</a></li>
+    </ul>
+  </div>
+
+  <!-- ── TOTALS TABLE ── -->
+  <div class="sh">
+    <div class="st">Totals by Account</div>
+  </div>
+
+  <table class="stats-table">
+    <thead>
+      <tr>
+        <th>Account</th>
+        <th>Urgent</th>
+        <th>Business</th>
+        <th>Personal</th>
+        <th>Financial</th>
+        <th>Waiting</th>
+        <th>Newsletter</th>
+        <th>Spam</th>
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:11px">bendavis354@gmail.com</td>
+        <td>1</td><td>3</td><td>4</td><td>1</td><td>1</td><td>10</td><td>3</td><td><strong>23</strong></td>
+      </tr>
+      <tr>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:11px">ben@heartspringgardens.org</td>
+        <td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1</td><td>1</td><td><strong>2</strong></td>
+      </tr>
+      <tr>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:11px">benjamin@biodynamics.com</td>
+        <td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td><strong>1</strong></td>
+      </tr>
+      <tr>
+        <td><strong>Total</strong></td>
+        <td><strong>2</strong></td><td><strong>3</strong></td><td><strong>4</strong></td><td><strong>1</strong></td><td><strong>1</strong></td><td><strong>11</strong></td><td><strong>4</strong></td><td><strong>26</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Footer -->
+  <div class="footer">
+    No emails sent automatically. Replies open Gmail compose &mdash; you write and send.<br>
+    <span style="color:#C0BAA8">Daily Briefing &nbsp;&middot;&nbsp; Claude Code &nbsp;&middot;&nbsp; May 3, 2026 4:30 PM EST</span>
+  </div>
+
+</div>
+
+<script>
+function filterAcc(account, btn) {
+  document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('[data-account]').forEach(el => {
+    if (account === 'all' || el.dataset.account === account) {
+      el.classList.remove('filtered-out');
+    } else {
+      el.classList.add('filtered-out');
+    }
+  });
+}
+
+function updateCal(eventId, calId) {
+  const link = document.getElementById('cal-link-' + eventId);
+  if (!link) return;
+  link.href = link.href.replace(/src=[^&]*/, 'src=' + calId);
+}
+</script>
+</body>
+</html>
