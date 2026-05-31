@@ -1,0 +1,141 @@
+{
+  "metadata": {
+    "generatedAt": "2026-05-31T16:30:00-04:00",
+    "date": "2026-05-31",
+    "timezone": "America/New_York",
+    "lastSuccessfulBuildAt": "2026-05-31T16:30:00-04:00",
+    "dataFreshThrough": "2026-05-31T16:29:00-04:00",
+    "liveUrl": "https://example.github.io/ben-briefing/"
+  },
+  "stats": {
+    "emailsScanned": 42,
+    "urgent": 1,
+    "eventsTomorrow": 2,
+    "proposedEvents": 1,
+    "suggestedReplies": 1,
+    "todos": 2
+  },
+  "accounts": [
+    { "email": "bendavis354@gmail.com", "label": "Personal", "type": "Personal" },
+    { "email": "ben@heartspringgardens.org", "label": "Heartspring", "type": "Business" },
+    { "email": "benjamin@biodynamics.com", "label": "Biodynamics", "type": "Business" }
+  ],
+  "calendars": [
+    { "id": "primary", "name": "Primary calendar", "color": "#3A7556" },
+    { "id": "heartspring@example.com", "name": "Heartspring Gardens", "color": "#A8843A" },
+    { "id": "biodynamics@example.com", "name": "Biodynamics", "color": "#3D5DAA" }
+  ],
+  "sections": {
+    "urgent": [
+      {
+        "account": "ben@heartspringgardens.org",
+        "sender": "Maya Fields <maya@example.com>",
+        "senderName": "Maya Fields",
+        "subject": "Deposit confirmation needed today",
+        "summary": "Maya needs confirmation before end of day so the spring order can proceed.",
+        "deadline": "Today",
+        "gmailThreadId": "18f123sample"
+      }
+    ],
+    "tomorrowSchedule": [
+      {
+        "title": "Greenhouse planning call",
+        "start": "2026-06-01T09:00:00-04:00",
+        "end": "2026-06-01T10:00:00-04:00",
+        "calendarName": "Heartspring Gardens",
+        "calendarId": "heartspring@example.com",
+        "location": "Google Meet",
+        "htmlLink": "https://calendar.google.com/calendar/event?eid=sample"
+      },
+      {
+        "title": "Biodynamics review",
+        "start": "2026-06-01T15:30:00-04:00",
+        "end": "2026-06-01T16:15:00-04:00",
+        "calendarName": "Biodynamics",
+        "calendarId": "biodynamics@example.com",
+        "location": ""
+      }
+    ],
+    "calendarProposals": [
+      {
+        "id": "event-1",
+        "account": "bendavis354@gmail.com",
+        "title": "Call Sam about compost delivery",
+        "start": "2026-06-01T11:00:00-04:00",
+        "end": "2026-06-01T11:30:00-04:00",
+        "location": "Phone",
+        "detail": "Monday, June 1, 11:00 AM - 11:30 AM",
+        "context": "Sam suggested a quick call tomorrow morning.",
+        "sourceSender": "Sam Rivera",
+        "sourceSubject": "Compost delivery timing",
+        "calendarId": "primary"
+      }
+    ],
+    "suggestedReplies": [
+      {
+        "account": "ben@heartspringgardens.org",
+        "sender": "Maya Fields <maya@example.com>",
+        "senderEmail": "maya@example.com",
+        "subject": "Re: Deposit confirmation needed today",
+        "title": "Confirm deposit timing",
+        "detail": "A short reply will unblock the order.",
+        "body": "Hi Maya,\n\nThanks for the note. I can confirm the deposit timing today and will follow up with any remaining details.\n\nBest,\nBen",
+        "gmailThreadId": "18f123sample"
+      }
+    ],
+    "todos": [
+      {
+        "account": "ben@heartspringgardens.org",
+        "priority": "high",
+        "text": "Confirm deposit timing with Maya."
+      },
+      {
+        "account": "benjamin@biodynamics.com",
+        "priority": "medium",
+        "text": "Review tomorrow's Biodynamics notes before the afternoon call."
+      }
+    ],
+    "business": [
+      {
+        "account": "benjamin@biodynamics.com",
+        "sender": "Ops Team",
+        "subject": "Weekly field notes",
+        "summary": "New notes are ready for review before the Monday meeting.",
+        "gmailThreadId": "18f456sample"
+      }
+    ],
+    "personal": [
+      {
+        "account": "bendavis354@gmail.com",
+        "sender": "Ari",
+        "subject": "Dinner this week?",
+        "summary": "Ari asked whether Wednesday or Thursday works better.",
+        "gmailThreadId": "18f789sample"
+      }
+    ],
+    "financial": [],
+    "waiting": [
+      {
+        "account": "ben@heartspringgardens.org",
+        "sender": "Supplier Desk",
+        "subject": "Re: revised quote",
+        "summary": "Ben replied yesterday; waiting for their revised numbers.",
+        "gmailThreadId": "18fwaitsample"
+      }
+    ],
+    "newsletter": [
+      {
+        "account": "bendavis354@gmail.com",
+        "sender": "Local Food Digest",
+        "summary": "Market schedule and grant links."
+      }
+    ],
+    "spam": [
+      {
+        "account": "bendavis354@gmail.com",
+        "sender": "Promo Sender",
+        "summary": "Unsolicited sales message."
+      }
+    ]
+  }
+}

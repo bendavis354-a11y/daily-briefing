@@ -1,0 +1,11 @@
+{
+  "type": "module",
+  "scripts": {
+    "build": "node src/render-briefing.mjs && node src/encrypt-page.mjs",
+    "render": "node src/render-briefing.mjs",
+    "encrypt": "node src/encrypt-page.mjs"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1"
+  }
+}

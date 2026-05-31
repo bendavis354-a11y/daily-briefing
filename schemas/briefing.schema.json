@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["metadata", "stats", "accounts", "sections"],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["generatedAt", "date", "timezone", "lastSuccessfulBuildAt", "dataFreshThrough"],
+      "properties": {
+        "generatedAt": { "type": "string" },
+        "date": { "type": "string" },
+        "timezone": { "type": "string" },
+        "lastSuccessfulBuildAt": { "type": "string" },
+        "dataFreshThrough": { "type": "string" },
+        "liveUrl": { "type": "string" },
+        "todayLabel": { "type": "string" },
+        "tomorrowLabel": { "type": "string" }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["emailsScanned", "urgent", "eventsTomorrow", "proposedEvents", "suggestedReplies", "todos"],
+      "properties": {
+        "emailsScanned": { "type": "number" },
+        "urgent": { "type": "number" },
+        "eventsTomorrow": { "type": "number" },
+        "proposedEvents": { "type": "number" },
+        "suggestedReplies": { "type": "number" },
+        "todos": { "type": "number" }
+      }
+    },
+    "accounts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["email", "label"],
+        "properties": {
+          "email": { "type": "string" },
+          "label": { "type": "string" },
+          "type": { "type": "string" },
+          "calendarId": { "type": "string" }
+        }
+      }
+    },
+    "calendars": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "color": { "type": "string" }
+        }
+      }
+    },
+    "sections": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "urgent": { "type": "array" },
+        "tomorrowSchedule": { "type": "array" },
+        "calendarProposals": { "type": "array" },
+        "suggestedReplies": { "type": "array" },
+        "todos": { "type": "array" },
+        "business": { "type": "array" },
+        "personal": { "type": "array" },
+        "financial": { "type": "array" },
+        "waiting": { "type": "array" },
+        "newsletter": { "type": "array" },
+        "spam": { "type": "array" }
+      }
+    }
+  }
+}
