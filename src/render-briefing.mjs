@@ -331,8 +331,9 @@ function sourceLine(item) {
 function gmailThreadLink(item, label, className) {
   const threadId = item.threadId || item.gmailThreadId;
   if (!threadId) return '';
-  const accountIndex = Number.isFinite(item.gmailAccountIndex) ? item.gmailAccountIndex : 0;
-  return `<a href="https://mail.google.com/mail/u/${accountIndex}/#inbox/${attr(threadId)}" target="_blank" rel="noopener noreferrer" class="${attr(className)}">${label}</a>`;
+  const sourceAccount = encodeURIComponent(item.account || item.sourceAccount || item.originalRecipient || '');
+  const authUser = sourceAccount ? `?authuser=${sourceAccount}` : '';
+  return `<a href="https://mail.google.com/mail/u/0/${authUser}#all/${attr(threadId)}" target="ben-gmail-thread" rel="noopener noreferrer" class="${attr(className)}">${label}</a>`;
 }
 
 function replyLink(item) {
