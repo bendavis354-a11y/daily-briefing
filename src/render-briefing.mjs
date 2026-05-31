@@ -231,18 +231,28 @@ function replySection(items = []) {
   </section>`;
 }
 
+function makeTodoId(item) {
+  const raw = [item.id || '', item.conversationKey || '', item.text || item.title || item.summary || '', accountOf(item)].join('\x00');
+  let h = 5381;
+  for (let i = 0; i < raw.length; i++) h = ((h << 5) + h + raw.charCodeAt(i)) | 0;
+  return 'todo_' + (h >>> 0).toString(36);
+}
+
 function todoSection(items = []) {
   if (!items?.length) return '';
   return `<section class="section">
     ${sectionHeader('To-do List', 'todo')}
-    <div class="todo-list">${items.map(item => `<div class="todo-item" data-account="${attr(accountOf(item))}" onclick="this.classList.toggle('checked')">
+    <div class="todo-list">${items.map(item => {
+      const tid = makeTodoId(item);
+      return `<div class="todo-item" data-account="${attr(accountOf(item))}" data-todo-id="${attr(tid)}" onclick="toggleTodo(this)">
       <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
       <div>
         <div class="todo-priority ${attr(item.priority || 'medium')}">${esc(item.priority || 'Medium')}</div>
         <div class="todo-text">${esc(item.text || item.title || item.summary || '')}</div>
         <div class="category-acc">${esc(accountOf(item))}</div>
       </div>
-    </div>`).join('')}</div>
+    </div>`;
+    }).join('')}</div>
   </section>`;
 }
 
@@ -501,6 +511,24 @@ function addToSchedule(linkEl) {
 function escapeText(value) {
   return String(value || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+function toggleTodo(el) {
+  el.classList.toggle('checked');
+  var tid = el.dataset.todoId;
+  if (!tid) return;
+  try {
+    var stored = JSON.parse(localStorage.getItem('briefing-todos') || '{}');
+    if (el.classList.contains('checked')) { stored[tid] = true; } else { delete stored[tid]; }
+    localStorage.setItem('briefing-todos', JSON.stringify(stored));
+  } catch (e) {}
+}
+(function restoreTodos() {
+  try {
+    var stored = JSON.parse(localStorage.getItem('briefing-todos') || '{}');
+    document.querySelectorAll('.todo-item[data-todo-id]').forEach(function(el) {
+      if (stored[el.dataset.todoId]) el.classList.add('checked');
+    });
+  } catch (e) {}
+})();
 `;
 }
 
@@ -548,7 +576,7 @@ function formatTime(value) {
 function formatDateTime(value) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return String(value || '');
-  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+  return d.toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
 function localISODate(date, timeZone) {
