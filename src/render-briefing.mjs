@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import Ajv from 'ajv';
+import Ajv from 'ajv/dist/2020.js';
 
 const briefingPath = process.env.BRIEFING_JSON || 'briefing.json';
 const outPath = process.env.PLAIN_BRIEFING_HTML || 'dist/briefing.plain.html';
