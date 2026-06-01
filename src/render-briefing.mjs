@@ -464,17 +464,23 @@ function sourceLine(item) {
 }
 
 function gmailThreadLink(item, label, className) {
-  const sourceAccount = item.sourceAccount || item.account || item.originalRecipient || '';
+  let account, threadId;
 
-  let threadId = null;
-  if (Array.isArray(item.gmailLinks) && item.gmailLinks.length) {
-    const match = item.gmailLinks.find(l => l.sourceAccount === sourceAccount) || item.gmailLinks[0];
-    if (match) threadId = match.gmailThreadId;
+  if (item.viewThreadAccount && item.viewThreadId) {
+    account = item.viewThreadAccount;
+    threadId = item.viewThreadId;
+  } else {
+    account = item.sourceAccount || item.account || item.originalRecipient || '';
+    if (Array.isArray(item.gmailLinks) && item.gmailLinks.length) {
+      const match = item.gmailLinks.find(l => l.sourceAccount === account) || item.gmailLinks[0];
+      if (match) threadId = match.gmailThreadId;
+    }
+    if (!threadId) threadId = item.gmailThreadId || item.threadId;
   }
-  if (!threadId) threadId = item.gmailThreadId || item.threadId;
+
   if (!threadId) return '';
 
-  const authuser = sourceAccount ? `?authuser=${encodeURIComponent(sourceAccount)}` : '';
+  const authuser = account ? `?authuser=${encodeURIComponent(account)}` : '';
   const url = `https://mail.google.com/mail/${authuser}#all/${threadId}`;
   return `<a href="${attr(url)}" target="ben-gmail-thread" rel="noopener noreferrer" class="${attr(className)}">${label}</a>`;
 }
