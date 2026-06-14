@@ -26,6 +26,7 @@ const taskCount = sections.todos?.length || 0;
 const calCount = sections.tomorrowSchedule?.length || 0;
 const suggCount = (sections.calendarProposals?.length || 0) + (sections.suggestedReplies?.length || 0);
 const fyiCount = (sections.newsletter?.length || 0) + (sections.spam?.length || 0);
+const imsgCount = (sections.imessage || []).filter(m => m.needsReply || m.priority === 'high').length;
 
 function badge(n) {
   return n ? `<span class="tab-badge">${n}</span>` : '';
@@ -70,6 +71,7 @@ const html = `<!DOCTYPE html>
     <button class="tab-btn" data-tab="tasks" onclick="switchTab('tasks',this)">Tasks${badge(taskCount)}</button>
     <button class="tab-btn" data-tab="calendar" onclick="switchTab('calendar',this)">Calendar${badge(calCount)}</button>
     <button class="tab-btn" data-tab="suggestions" onclick="switchTab('suggestions',this)">Suggestions${badge(suggCount)}</button>
+    <button class="tab-btn" data-tab="messages" onclick="switchTab('messages',this)">Messages${badge(imsgCount)}</button>
     <button class="tab-btn" data-tab="fyi" onclick="switchTab('fyi',this)">FYI${badge(fyiCount)}</button>
   </nav>
 
@@ -94,6 +96,10 @@ const html = `<!DOCTYPE html>
 
     <div id="tab-suggestions" class="tab-panel">
       ${suggestionsPanel()}
+    </div>
+
+    <div id="tab-messages" class="tab-panel">
+      ${imessagesPanel()}
     </div>
 
     <div id="tab-fyi" class="tab-panel">
@@ -207,6 +213,45 @@ function fyiPanel() {
     ${summaryBlock('Newsletter / Info', sections.newsletter)}
     ${summaryBlock('Spam / Junk', sections.spam)}
     ${accountTotals()}`;
+}
+
+function imessagesPanel() {
+  const items = sections.imessage || [];
+  const isSystemOnly = items.length === 1 && items[0]?.chat === 'system';
+
+  if (!items.length || isSystemOnly) {
+    const note = items[0]?.summary || 'No iMessage data available for this run.';
+    return `<div class="no-data large">${esc(note)}</div>`;
+  }
+
+  const needsReply = items.filter(m => m.needsReply && m.chat !== 'system');
+  const fyi = items.filter(m => !m.needsReply && m.chat !== 'system');
+
+  return `
+    ${needsReply.length ? `
+    <section class="section">
+      ${sectionHeader('Needs Reply', 'reply')}
+      <div class="imsg-list">${needsReply.map(imsgCard).join('')}</div>
+    </section>` : ''}
+    ${fyi.length ? `
+    <section class="section">
+      ${sectionHeader('FYI', 'neutral')}
+      <div class="imsg-list">${fyi.map(imsgCard).join('')}</div>
+    </section>` : ''}`;
+}
+
+function imsgCard(item) {
+  const priorityClass = item.priority === 'high' ? 'high' : item.priority === 'low' ? 'low' : 'medium';
+  const dateStr = item.date ? formatDateTime(item.date) : '';
+  return `<div class="imsg-card${item.needsReply ? ' needs-reply' : ''}">
+    <div class="imsg-header">
+      <span class="imsg-sender">${esc(item.sender || item.handle || 'Unknown')}</span>
+      ${item.needsReply ? `<span class="imsg-tag reply">Needs Reply</span>` : ''}
+      ${item.priority === 'high' ? `<span class="imsg-tag urgent">Urgent</span>` : ''}
+      ${dateStr ? `<span class="imsg-date">${esc(dateStr)}</span>` : ''}
+    </div>
+    <div class="imsg-summary">${esc(item.summary || '')}</div>
+  </div>`;
 }
 
 // ── section renderers ────────────────────────────────────────────────────────
@@ -1030,6 +1075,32 @@ footer {
   border-top: 1px solid var(--border);
   padding-top: 16px;
 }
+
+/* ── imessage ───────────────────────────── */
+.imsg-list { display: grid; gap: 8px; }
+.imsg-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+}
+.imsg-card.needs-reply { border-color: rgba(61,93,170,.3); }
+.imsg-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.imsg-sender { font-weight: 700; font-size: 14px; }
+.imsg-tag {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.imsg-tag.reply { background: rgba(61,93,170,.12); color: var(--reply); }
+.imsg-tag.urgent { background: rgba(184,58,58,.1); color: var(--urgent); }
+.imsg-date { margin-left: auto; font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--muted); }
+.imsg-summary { font-size: 13px; color: #4C4943; line-height: 1.45; }
 
 /* ── utility ────────────────────────────── */
 .hidden-by-filter { display: none !important; }
