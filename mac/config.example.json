@@ -1,0 +1,7 @@
+{
+  "client_id": "REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID",
+  "client_secret": "REPLACE_WITH_GOOGLE_OAUTH_CLIENT_SECRET",
+  "refresh_token": "REPLACE_WITH_REFRESH_TOKEN_FOR_bendavis354@gmail.com",
+  "drive_file_id": "REPLACE_WITH_DRIVE_IMESSAGE_FILE_ID",
+  "window_hours": 48
+}
