@@ -240,6 +240,7 @@ console.log('STEP 5: Classifying emails…');
 
 const urgent = [], business = [], personal = [], financial = [], newsletter = [], waiting = [], spam = [];
 const calendarProposals = [], suggestedReplies = [], todos = [];
+const suggestedReplyKeys = new Set(); // tracks convos already covered by a suggested reply
 
 const accountIndex = Object.fromEntries(accounts.map((a, i) => [a.email, i]));
 
@@ -360,20 +361,22 @@ for (const convo of activeConvos) {
         viewThreadAccount,
         viewThreadId
       });
+      suggestedReplyKeys.add(convo.conversationKey);
     }
     continue;
   }
 
   if (isFinancial) {
     financial.push(item);
-    if (convo.status === 'waiting_on_ben') {
+    // Only add a todo for invoices/bills that need action — not receipts, confirmations, or statements
+    if (convo.status === 'waiting_on_ben' && isFinancialActionRequired(latest)) {
       todos.push({
         id: `todo-fin-${convo.conversationKey}`,
         conversationKey: convo.conversationKey,
         account: item.account,
         sourceAccount: item.sourceAccount,
         priority: 'medium',
-        text: `Review: ${latest.subject}`,
+        text: `Review and act: ${latest.subject}`,
         status: 'open',
         origin: 'email'
       });
@@ -399,31 +402,32 @@ for (const convo of activeConvos) {
     personal.push(item);
   }
 
-  // Suggested replies (waiting_on_ben)
-  if (convo.status === 'waiting_on_ben' && !isAutoReply(latest) && !latest.fromMe) {
-    if (!sender.email.includes('no-reply') && !sender.email.includes('noreply') && sender.email) {
-      suggestedReplies.push({
-        id: `reply-${convo.conversationKey}`,
-        conversationKey: convo.conversationKey,
-        account: item.account,
-        sourceAccount: item.sourceAccount,
-        sender: latest.from,
-        senderName: sender.name,
-        senderEmail: sender.email,
-        to: sender.email,
-        subject: latest.subject,
-        title: `Reply to: ${latest.subject}`,
-        detail: hasNewActivity
-          ? `New message from ${sender.name || sender.email}`
-          : `Awaiting your reply — from ${sender.name || sender.email}`,
-        body: buildReplyBody(sender.name, latest.subject),
-        gmailThreadId: latest.gmailThreadId,
-        gmailLinks,
-        viewThreadAccount,
-        viewThreadId,
-        _isNew: hasNewActivity
-      });
-    }
+  // Suggested replies (waiting_on_ben) — only real human senders with genuine asks
+  if (convo.status === 'waiting_on_ben' && !isAutoReply(latest) && !latest.fromMe &&
+      !isAutomatedSender(latest) && sender.email) {
+    suggestedReplies.push({
+      id: `reply-${convo.conversationKey}`,
+      conversationKey: convo.conversationKey,
+      account: item.account,
+      sourceAccount: item.sourceAccount,
+      sender: latest.from,
+      senderName: sender.name,
+      senderEmail: sender.email,
+      to: sender.email,
+      subject: latest.subject,
+      title: `Reply to: ${latest.subject}`,
+      detail: hasNewActivity
+        ? `New message from ${sender.name || sender.email}`
+        : `Awaiting your reply — from ${sender.name || sender.email}`,
+      body: buildReplyBody(sender.name, latest.subject),
+      gmailThreadId: latest.gmailThreadId,
+      gmailLinks,
+      viewThreadAccount,
+      viewThreadId,
+      _isNew: hasNewActivity,
+      _date: latest.internalDate || 0
+    });
+    suggestedReplyKeys.add(convo.conversationKey);
   }
 
   // Calendar proposals
@@ -445,8 +449,8 @@ for (const convo of activeConvos) {
     });
   }
 
-  // Todos
-  if (needsTodo(latest, convo.status, prior)) {
+  // Todos — only for distinct action items not already covered by a suggested reply
+  if (!suggestedReplyKeys.has(convo.conversationKey) && needsTodo(latest, convo.status, prior)) {
     todos.push({
       id: `todo-${convo.conversationKey}`,
       conversationKey: convo.conversationKey,
@@ -460,9 +464,12 @@ for (const convo of activeConvos) {
   }
 }
 
-// Sort and cap suggested replies
-suggestedReplies.sort((a, b) => (b._isNew ? 1 : 0) - (a._isNew ? 1 : 0));
-const trimmedReplies = suggestedReplies.slice(0, 8).map(r => { delete r._isNew; return r; });
+// Sort suggested replies: new activity first, then by recency; cap at 8
+suggestedReplies.sort((a, b) => {
+  if (b._isNew !== a._isNew) return (b._isNew ? 1 : 0) - (a._isNew ? 1 : 0);
+  return (b._date || 0) - (a._date || 0);
+});
+const trimmedReplies = suggestedReplies.slice(0, 8).map(r => { delete r._isNew; delete r._date; return r; });
 
 // ── STEP 5B: Process iMessages ────────────────────────────────────────────────
 const imessageSection = [];
@@ -504,10 +511,10 @@ if (imessageData && imessageStatus !== 'missing') {
     let isActionable = needsReply || isUrgentMsg || hasMeetingProposal;
     if (isActionable) imessagesActionable++;
 
-    // Build todo if needs reply
+    // Only create a todo for urgent iMessages — the imessage section surfaces routine replies
     let todoText = null;
-    if (needsReply && !isFromMe) {
-      todoText = `Reply to iMessage from ${senderName}`;
+    if (isUrgentMsg) {
+      todoText = `Urgent iMessage from ${senderName} — needs reply`;
     }
 
     imessageSection.push({
@@ -708,9 +715,45 @@ function needsTodo(msg, status, prior) {
   if (status !== 'waiting_on_ben') return false;
   if (prior?.todoAdded) return false;
   const subject = String(msg.subject || '').toLowerCase();
+  // Tight keyword set — "please" and "request" are too common and create noise
   return (
-    subject.includes('follow up') || subject.includes('action') || subject.includes('please') ||
-    subject.includes('can you') || subject.includes('request') || subject.includes('reminder')
+    subject.includes('follow up') ||
+    subject.includes('action required') ||
+    subject.includes('action needed') ||
+    subject.includes('can you') ||
+    subject.includes('reminder') ||
+    subject.includes('deadline') ||
+    subject.includes('by when') ||
+    subject.includes('next steps')
+  );
+}
+
+function isAutomatedSender(msg) {
+  const from = String(msg.from || '').toLowerCase();
+  const subject = String(msg.subject || '').toLowerCase();
+  return (
+    from.includes('no-reply') || from.includes('noreply') || from.includes('do-not-reply') ||
+    from.includes('donotreply') || from.includes('notifications@') || from.includes('updates@') ||
+    from.includes('mailer@') || from.includes('bounce@') || from.includes('support@') && (
+      subject.includes('confirmation') || subject.includes('receipt') || subject.includes('order')
+    ) ||
+    subject.includes('password reset') || subject.includes('verify your') ||
+    subject.includes('confirm your email') || subject.includes('order confirmation') ||
+    subject.includes('shipment') || subject.includes('your receipt')
+  );
+}
+
+function isFinancialActionRequired(msg) {
+  // Returns true only for financial emails that need a human response or payment action
+  // Not for automated receipts, statements, or order confirmations
+  const subject = String(msg.subject || '').toLowerCase();
+  const from = String(msg.from || '').toLowerCase();
+  const isAutomated = isAutomatedSender(msg);
+  if (isAutomated) return false;
+  return (
+    subject.includes('invoice') || subject.includes('past due') || subject.includes('overdue') ||
+    subject.includes('payment required') || subject.includes('balance due') ||
+    subject.includes('payroll') || subject.includes('bill')
   );
 }
 
