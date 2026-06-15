@@ -181,13 +181,18 @@ function emailPanel() {
 
 function tasksPanel() {
   const todos = sections.todos || [];
-  if (!todos.length) {
-    return `<div class="no-data large">No open tasks. Nice work.</div>`;
-  }
   return `
     <section class="section">
       ${sectionHeader('To-do List', 'todo')}
-      <div class="todo-list full">${todos.map(item => todoItem(item)).join('')}</div>
+      ${todos.length
+        ? `<div class="todo-list full" id="task-open-list">${todos.map(item => todoItem(item)).join('')}</div>`
+        : `<div class="no-data" id="task-open-list">No open tasks. Nice work.</div>`}
+      <div class="todo-completed-section" id="task-done-section" style="display:none">
+        <button class="todo-done-toggle" onclick="toggleDoneSection()" id="task-done-toggle">
+          Show completed <span id="task-done-count"></span>
+        </button>
+        <div class="todo-list full" id="task-done-list" style="display:none"></div>
+      </div>
     </section>`;
 }
 
@@ -453,13 +458,15 @@ function replySection(items = []) {
 
 function todoItem(item) {
   const tid = makeTodoId(item);
-  return `<div class="todo-item" data-account="${attr(accountOf(item))}" data-todo-id="${attr(tid)}" onclick="toggleTodo(this)">
-    <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
-    <div class="todo-body">
+  const originNote = item.carried ? ' <span class="todo-carried">carried</span>' : '';
+  return `<div class="todo-item" data-account="${attr(accountOf(item))}" data-todo-id="${attr(tid)}">
+    <div class="todo-check" onclick="toggleTodoDone(this.closest('.todo-item'))"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+    <div class="todo-body" onclick="toggleTodoDone(this.closest('.todo-item'))">
       <div class="todo-priority ${attr(item.priority || 'medium')}">${esc(item.priority || 'Medium')}</div>
-      <div class="todo-text">${esc(item.text || item.title || item.summary || '')}</div>
+      <div class="todo-text">${esc(item.text || item.title || item.summary || '')}${originNote}</div>
       <div class="todo-account">${esc(accountLabel(accountOf(item)))}</div>
     </div>
+    <button class="todo-dismiss" onclick="dismissTodo(this.closest('.todo-item'))" title="Not needed" aria-label="Mark not needed">✕</button>
   </div>`;
 }
 
@@ -560,10 +567,12 @@ function calendarEventLink(ev) {
 }
 
 function makeTodoId(item) {
-  const raw = [item.id || '', item.conversationKey || '', item.text || item.title || item.summary || '', accountOf(item)].join('\x00');
+  // Prefer stable item.id (conversationKey-based) so state persists across days
+  if (item.id) return 'ti_' + String(item.id).replace(/[^a-z0-9]/gi, '_');
+  const raw = [item.conversationKey || '', item.text || item.title || '', accountOf(item)].join('\x00');
   let h = 5381;
   for (let i = 0; i < raw.length; i++) h = ((h << 5) + h + raw.charCodeAt(i)) | 0;
-  return 'todo_' + (h >>> 0).toString(36);
+  return 'ti_' + (h >>> 0).toString(36);
 }
 
 function buildAccountTotals() {
@@ -998,13 +1007,13 @@ h2.section-title {
 .todo-list.full {}
 .todo-item {
   display: grid;
-  grid-template-columns: 24px 1fr;
+  grid-template-columns: 24px 1fr 24px;
   gap: 12px;
+  align-items: start;
   padding: 12px 14px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  cursor: pointer;
   box-shadow: var(--shadow);
   transition: opacity .2s;
 }
@@ -1018,12 +1027,29 @@ h2.section-title {
   background: var(--surface);
   margin-top: 2px;
   flex-shrink: 0;
+  cursor: pointer;
   transition: all .15s;
 }
 .todo-check svg { opacity: 0; transition: opacity .15s; }
-.todo-item.checked .todo-check { background: var(--calendar); border-color: var(--calendar); }
-.todo-item.checked .todo-check svg { opacity: 1; }
-.todo-item.checked .todo-text { text-decoration: line-through; color: var(--muted); }
+.todo-body { cursor: pointer; }
+.todo-item.done .todo-check { background: var(--calendar); border-color: var(--calendar); }
+.todo-item.done .todo-check svg { opacity: 1; }
+.todo-item.done .todo-text { text-decoration: line-through; color: var(--muted); }
+.todo-item.dismissed { display: none; }
+.todo-dismiss {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 0;
+  line-height: 1;
+  opacity: .4;
+  transition: opacity .15s;
+  margin-top: 3px;
+  align-self: start;
+}
+.todo-dismiss:hover { opacity: 1; color: var(--urgent); }
 .todo-priority {
   display: inline-flex;
   padding: 2px 7px;
@@ -1040,6 +1066,19 @@ h2.section-title {
 .todo-priority.low { color: var(--calendar); background: rgba(58,117,86,.1); }
 .todo-text { font-size: 14px; line-height: 1.4; }
 .todo-account { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--muted); margin-top: 3px; }
+.todo-carried { font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-left: 6px; opacity: .7; }
+.todo-completed-section { margin-top: 16px; }
+.todo-done-toggle {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.todo-done-toggle:hover { color: var(--text); }
 
 /* ── fyi ────────────────────────────────── */
 .summary-block {
@@ -1214,26 +1253,120 @@ function escapeText(value) {
   });
 }
 
-function toggleTodo(el) {
-  var tid = el.dataset.todoId;
-  if (!tid) return;
-  var checked = !el.classList.contains('checked');
-  document.querySelectorAll('[data-todo-id="' + tid + '"]').forEach(function(item) {
-    item.classList.toggle('checked', checked);
+var TASK_KEY = 'briefing-task-state';
+var TASK_DONE_TTL = 7 * 86400000;   // 7 days
+var TASK_DISMISS_TTL = 14 * 86400000; // 14 days
+
+function _loadTaskState() {
+  try { return JSON.parse(localStorage.getItem(TASK_KEY) || '{}'); } catch(e) { return {}; }
+}
+function _saveTaskState(state) {
+  try { localStorage.setItem(TASK_KEY, JSON.stringify(state)); } catch(e) {}
+}
+function _pruneTaskState(state) {
+  var now = Date.now();
+  Object.keys(state).forEach(function(k) {
+    var entry = state[k];
+    var ttl = entry.s === 'done' ? TASK_DONE_TTL : TASK_DISMISS_TTL;
+    if (now - (entry.at || 0) > ttl) delete state[k];
   });
-  try {
-    var stored = JSON.parse(localStorage.getItem('briefing-todos') || '{}');
-    if (checked) { stored[tid] = true; } else { delete stored[tid]; }
-    localStorage.setItem('briefing-todos', JSON.stringify(stored));
-  } catch(e) {}
+  return state;
 }
 
-(function restoreTodos() {
+function toggleTodoDone(el) {
+  var tid = el.dataset.todoId;
+  if (!tid) return;
+  var isDone = !el.classList.contains('done');
+  el.classList.toggle('done', isDone);
+  var state = _pruneTaskState(_loadTaskState());
+  if (isDone) { state[tid] = { s: 'done', at: Date.now() }; } else { delete state[tid]; }
+  _saveTaskState(state);
+  _syncDoneSection();
+  updateTaskBadge();
+}
+
+function dismissTodo(el) {
+  var tid = el.dataset.todoId;
+  if (!tid) return;
+  el.classList.add('dismissed');
+  var state = _pruneTaskState(_loadTaskState());
+  state[tid] = { s: 'dismissed', at: Date.now() };
+  _saveTaskState(state);
+  updateTaskBadge();
+}
+
+function toggleDoneSection() {
+  var list = document.getElementById('task-done-list');
+  var btn = document.getElementById('task-done-toggle');
+  if (!list || !btn) return;
+  var open = list.style.display === 'none';
+  list.style.display = open ? '' : 'none';
+  var count = list.querySelectorAll('.todo-item').length;
+  btn.textContent = (open ? 'Hide completed' : 'Show completed') + ' (' + count + ')';
+}
+
+function _syncDoneSection() {
+  var openList = document.getElementById('task-open-list');
+  var doneList = document.getElementById('task-done-list');
+  var doneSection = document.getElementById('task-done-section');
+  var doneToggle = document.getElementById('task-done-toggle');
+  if (!openList || !doneList || !doneSection) return;
+
+  // Move done items into the done list, open items back
+  var allItems = document.querySelectorAll('.todo-item[data-todo-id]');
+  allItems.forEach(function(el) {
+    if (el.classList.contains('done')) {
+      if (el.parentNode !== doneList) doneList.appendChild(el);
+    } else {
+      if (el.parentNode !== openList) openList.appendChild(el);
+    }
+  });
+
+  var doneCount = doneList.querySelectorAll('.todo-item').length;
+  if (doneCount > 0) {
+    doneSection.style.display = '';
+    var isOpen = doneList.style.display !== 'none';
+    if (doneToggle) doneToggle.textContent = (isOpen ? 'Hide completed' : 'Show completed') + ' (' + doneCount + ')';
+  } else {
+    doneSection.style.display = 'none';
+  }
+}
+
+function updateTaskBadge() {
+  var open = document.querySelectorAll('#task-open-list .todo-item:not(.done):not(.dismissed)').length;
+  document.querySelectorAll('[data-tab="tasks"] .tab-badge').forEach(function(b) {
+    b.textContent = open || '';
+    b.style.display = open ? '' : 'none';
+  });
+}
+
+(function restoreTaskState() {
   try {
-    var stored = JSON.parse(localStorage.getItem('briefing-todos') || '{}');
+    var state = _pruneTaskState(_loadTaskState());
+    _saveTaskState(state);
     document.querySelectorAll('.todo-item[data-todo-id]').forEach(function(el) {
-      if (stored[el.dataset.todoId]) el.classList.add('checked');
+      var entry = state[el.dataset.todoId];
+      if (!entry) return;
+      if (entry.s === 'done') el.classList.add('done');
+      if (entry.s === 'dismissed') el.classList.add('dismissed');
     });
+    _syncDoneSection();
+    updateTaskBadge();
+  } catch(e) {}
+})();
+
+// Legacy: migrate old 'briefing-todos' checked state to new schema
+(function migrateLegacyTodos() {
+  try {
+    var old = JSON.parse(localStorage.getItem('briefing-todos') || '{}');
+    if (!Object.keys(old).length) return;
+    var state = _loadTaskState();
+    var now = Date.now();
+    Object.keys(old).forEach(function(k) {
+      if (!state[k]) state[k] = { s: 'done', at: now };
+    });
+    _saveTaskState(state);
+    localStorage.removeItem('briefing-todos');
   } catch(e) {}
 })();
 `;

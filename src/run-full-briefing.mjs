@@ -584,6 +584,25 @@ if (imessageData && imessageStatus !== 'missing') {
 
 console.log(`iMessages: scanned=${imessagesScanned}, actionable=${imessagesActionable}`);
 
+// ── Task continuity: merge today's todos with prior open tasks ─────────────────
+// Auto-resolve tasks where Ben has replied to the underlying email
+const resolvedConvoKeys = new Set(
+  activeConvos.filter(c => c.status === 'waiting_on_other').map(c => c.conversationKey)
+);
+const todayTaskIds = new Set(todos.map(t => t.id).filter(Boolean));
+
+const carriedTasks = (assistantState.openTasks || []).filter(t => {
+  if (!t.id) return false;
+  if (todayTaskIds.has(t.id)) return false; // today's scan already covers it
+  if (t.conversationKey && resolvedConvoKeys.has(t.conversationKey)) return false; // auto-resolved
+  return true; // still open, carry forward
+}).map(t => ({ ...t, carried: true }));
+
+if (carriedTasks.length) {
+  console.log(`Carrying forward ${carriedTasks.length} unresolved task(s) from prior state`);
+  todos.push(...carriedTasks);
+}
+
 // ── STEP 6: Write briefing.json ───────────────────────────────────────────────
 console.log('STEP 6: Writing briefing.json…');
 
