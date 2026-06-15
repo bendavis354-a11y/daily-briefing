@@ -43,6 +43,7 @@ UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files/{file_id}?uploadT
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "ben-briefing" / "imessage-export.json"
 DEFAULT_DB_PATH = Path.home() / "Library" / "Messages" / "chat.db"
 DEFAULT_WINDOW_HOURS = 48
+ADDRESSBOOK_BASE = Path.home() / "Library" / "Application Support" / "AddressBook"
 
 
 def log(msg: str) -> None:
@@ -112,7 +113,95 @@ def decode_attributed_body(blob) -> str:
         return ""
 
 
-def read_messages(db_path: Path, window_hours: int) -> list:
+def load_contacts() -> dict:
+    """Return a dict mapping normalized phone digits and lowercase emails to contact names.
+
+    Reads every AddressBook-v22.abcddb source found on the system.
+    Gracefully skips any DB it can't open (e.g. no Full Disk Access for Contacts).
+    """
+    contacts: dict = {}
+    ab_paths = list(ADDRESSBOOK_BASE.glob("Sources/*/AddressBook-v22.abcddb"))
+    ab_paths += list(ADDRESSBOOK_BASE.glob("AddressBook-v22.abcddb"))
+
+    for ab_path in ab_paths:
+        if not ab_path.exists():
+            continue
+        try:
+            uri = f"file:{urllib.parse.quote(str(ab_path))}?mode=ro"
+            conn = sqlite3.connect(uri, uri=True)
+            conn.row_factory = sqlite3.Row
+
+            # ROWID → "First Last"
+            names: dict = {}
+            try:
+                for row in conn.execute("SELECT Z_PK, ZFIRSTNAME, ZLASTNAME FROM ZABCDRECORD"):
+                    parts = [p for p in (row["ZFIRSTNAME"] or "", row["ZLASTNAME"] or "") if p and p.strip()]
+                    if parts:
+                        names[row["Z_PK"]] = " ".join(parts)
+            except sqlite3.OperationalError:
+                pass
+
+            try:
+                for row in conn.execute(
+                    "SELECT ZOWNER, ZFULLNUMBER FROM ZABCDPHONENUMBER WHERE ZFULLNUMBER IS NOT NULL"
+                ):
+                    name = names.get(row["ZOWNER"])
+                    if name:
+                        digits = _digits_only(row["ZFULLNUMBER"])
+                        if digits:
+                            contacts[digits] = name
+            except sqlite3.OperationalError:
+                pass
+
+            try:
+                for row in conn.execute(
+                    "SELECT ZOWNER, ZADDRESS FROM ZABCDEMAILADDRESS WHERE ZADDRESS IS NOT NULL"
+                ):
+                    name = names.get(row["ZOWNER"])
+                    if name:
+                        email = (row["ZADDRESS"] or "").strip().lower()
+                        if email:
+                            contacts[email] = name
+            except sqlite3.OperationalError:
+                pass
+
+            conn.close()
+        except Exception:
+            pass
+
+    return contacts
+
+
+def _digits_only(value: str) -> str:
+    return "".join(ch for ch in str(value) if ch.isdigit())
+
+
+def _resolve_handle(handle: str, contacts: dict) -> str:
+    """Return the contact name for a handle, or the original handle if not found."""
+    if not handle:
+        return handle
+    lower = handle.strip().lower()
+    if "@" in lower:
+        return contacts.get(lower, handle)
+    digits = _digits_only(handle)
+    if not digits:
+        return handle
+    if digits in contacts:
+        return contacts[digits]
+    # +15185675671 → try 10-digit without country code
+    if len(digits) == 11 and digits.startswith("1"):
+        hit = contacts.get(digits[1:])
+        if hit:
+            return hit
+    # 10-digit → try with leading 1
+    if len(digits) == 10:
+        hit = contacts.get("1" + digits)
+        if hit:
+            return hit
+    return handle
+
+
+def read_messages(db_path: Path, window_hours: int, contacts: dict) -> list:
     if not db_path.exists():
         log(f"ERROR: Messages database not found at {db_path}")
         log("Is this a Mac with iMessage enabled? Has Full Disk Access been granted?")
@@ -165,7 +254,7 @@ def read_messages(db_path: Path, window_hours: int) -> list:
             "chat_id": row["chat_id"] or row["handle"] or "unknown",
             "chat_name": row["chat_name"] or "",
             "handle": row["handle"] or "",
-            "sender_name": row["handle"] or "",
+            "sender_name": _resolve_handle(row["handle"] or "", contacts),
             "is_from_me": bool(row["is_from_me"]),
             "date": iso,
             "text": text,
@@ -217,8 +306,12 @@ def main() -> None:
     window_hours = int(cfg.get("window_hours", DEFAULT_WINDOW_HOURS))
     db_path = Path(cfg.get("db_path", str(DEFAULT_DB_PATH)))
 
+    log("Loading contacts from AddressBook…")
+    contacts = load_contacts()
+    log(f"Loaded {len(contacts)} contact entries (phones + emails).")
+
     log(f"Reading messages from {db_path} (last {window_hours}h)…")
-    messages = read_messages(db_path, window_hours)
+    messages = read_messages(db_path, window_hours, contacts)
     with_text = sum(1 for m in messages if m["text"])
     log(f"Collected {len(messages)} messages ({with_text} with text content).")
 
