@@ -113,10 +113,16 @@ over custom OAuth. Instead:
   the durable **Gmail connector** (see `prompts/routine-prompt.md`), handed to the
   Node pipeline via `CONNECTOR_MESSAGES_FILE`.
 - Workspace mailboxes → durable custom OAuth (`"auth": "oauth"`, the default).
-- Drive state → read via the Drive connector (`CONNECTOR_STATE_FILE`) and written
-  back with a durable **Workspace** account. `DRIVE_STATE_ACCOUNT` names that
-  account; it must have a refresh token with Drive scope and be able to write
-  `DRIVE_STATE_FILE_ID`. Nothing depends on the weekly-expiring personal token.
+- Drive state (durable memory) → read and written entirely through the **Drive
+  connector**, which needs no OAuth token at all. The connector can create files
+  but not overwrite them, so each run writes a fresh `ben-assistant-state.json`
+  and the next run loads the newest one (see `prompts/routine-prompt.md`, STEPs 1
+  and 5). Nothing depends on the weekly-expiring personal token, and no Workspace
+  Drive scope is required.
+- Optional OAuth overwrite mode: if you authorize a Workspace account with Drive
+  scope, set `DRIVE_STATE_ACCOUNT` and run `run-state-update.mjs` without
+  `CONNECTOR_STATE_FILE` to overwrite one fixed `DRIVE_STATE_FILE_ID` instead of
+  creating a new file each run.
 
 `GMAIL_ACCOUNTS_JSON` should look like this:
 

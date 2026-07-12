@@ -26,10 +26,16 @@ addition to the repository's Node scripts. Use both as described below.
 - The final public page must be encrypted with the configured briefing password.
 
 ## STEP 1 — Load state (Drive connector)
-1. Read the assistant state file (`DRIVE_STATE_FILE_ID`) with the Drive connector
-   (`download_file_content`). Save it to `/tmp/connector-state.json`.
-2. Read pending actions (if configured) and apply them to that JSON in place:
-   `ignore_conversation`, `snooze_conversation`, `mark_done`, `mark_important`, `note`.
+Assistant memory lives in Drive as files titled `ben-assistant-state.json`. Each
+run writes a fresh copy (the connector can create files but not overwrite them),
+so always load the NEWEST one:
+1. `search_files` for `title = 'ben-assistant-state.json'` and pick the file with
+   the most recent `modifiedTime`/`createdTime`. On the very first run this is the
+   original `DRIVE_STATE_FILE_ID`. Remember its `parentId` for STEP 5.
+2. `download_file_content` that file to `/tmp/connector-state.json`.
+3. Apply any pending actions to that JSON in place: `ignore_conversation`,
+   `snooze_conversation`, `mark_done`, `mark_important`, `note`. Clear pending
+   actions only after STEP 5 has succeeded.
 
 ## STEP 2 — Read personal mailbox (Gmail connector)
 1. With the Gmail connector, `search_threads` scoped to the personal address so
@@ -68,13 +74,25 @@ messages, dedupes across accounts, scans Workspace calendars, and writes
    Never push to `main`. (`npm run build` already writes `index.html` at the repo
    root; there is no separate copy step.)
 
-## STEP 5 — Persist state (durable Workspace Drive token)
-Run the state-update step, which writes the assistant state back to Drive using
-the durable Workspace account (`DRIVE_STATE_ACCOUNT`), never the personal token:
-```bash
-node src/run-state-update.mjs
-```
-The Drive connector can read file content but not overwrite it, so the write-back
-uses the Workspace Drive OAuth token. This requires `DRIVE_STATE_ACCOUNT` to name
-a Workspace account whose refresh token carries Drive scope and that can write the
-state file (see `GMAIL_ACCOUNTS_JSON` notes in the implementation guide).
+## STEP 5 — Persist state (Drive connector, durable)
+1. Merge this run into the state. Reads the connector copy, writes a local file,
+   makes no network calls:
+   ```bash
+   CONNECTOR_STATE_FILE=/tmp/connector-state.json node src/run-state-update.mjs
+   ```
+   This writes the next state to `/tmp/next-state.json`.
+2. Upload `/tmp/next-state.json` to Drive with the connector so tomorrow's run
+   reads it. Use `create_file` with:
+   - `title`: `ben-assistant-state.json`
+   - `contentMimeType`: `application/json`
+   - `disableConversionToGoogleType`: `true`  (keep it JSON, not a Google Doc)
+   - `textContent`: the contents of `/tmp/next-state.json`
+   - `parentId`: the folder of the state file you loaded in STEP 1
+     (from `get_file_metadata`), so it lands beside the previous copy.
+3. Only after the upload succeeds, clear pending actions.
+
+This path needs no Drive-scoped OAuth token. The connector can create files but
+not overwrite them, so a new state file is written each run and STEP 1 always
+reads the newest. (If you later authorize a Workspace account with Drive scope,
+run `node src/run-state-update.mjs` WITHOUT `CONNECTOR_STATE_FILE` to overwrite a
+single fixed file instead.)
