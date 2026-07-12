@@ -60,9 +60,13 @@ messages, dedupes across accounts, scans Workspace calendars, and writes
 `briefing.json` + `/tmp/briefing-state-full.json`.
 
 ## STEP 4 — Render, encrypt, deploy
-1. `npm run build` (render + encrypt).
-2. Copy `dist/index.html` to root `index.html`.
-3. Commit `index.html` + `.nojekyll` to `claude/briefing` and push. Never push to `main`.
+1. `npm install` if `node_modules` is missing.
+2. `npm run build` — this validates `briefing.json` against the schema, renders
+   `dist/briefing.plain.html`, and encrypts it to root `index.html`. If the build
+   fails (e.g. schema validation), STOP and report — do not deploy a broken page.
+3. Commit the root `index.html` + `.nojekyll` to `claude/briefing` and push.
+   Never push to `main`. (`npm run build` already writes `index.html` at the repo
+   root; there is no separate copy step.)
 
 ## STEP 5 — Persist state (durable Workspace Drive token)
 Run the state-update step, which writes the assistant state back to Drive using

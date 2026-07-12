@@ -683,6 +683,13 @@ const statePayload = {
 fs.writeFileSync('/tmp/briefing-state-full.json', JSON.stringify(statePayload, null, 2));
 console.log('State payload written to /tmp/briefing-state-full.json');
 
+// run-state-update.mjs consumes this exact filename and shape (conversations + todos).
+fs.writeFileSync('/tmp/briefing-state-update.json', JSON.stringify({
+  conversations: statePayload.conversations,
+  todos
+}, null, 2));
+console.log('State update payload written to /tmp/briefing-state-update.json');
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function parseSender(from) {
   const match = String(from || '').match(/^"?([^"<]+?)"?\s*<([^>]+)>/) ||
