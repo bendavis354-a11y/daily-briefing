@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { getAccessToken } from './google-auth.mjs';
+import { oauthAccounts } from './accounts.mjs';
 
 const GMAIL = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const HEADERS = [
@@ -21,11 +23,69 @@ export async function scanConfiguredMailboxes() {
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
   const results = [];
 
-  for (const account of accounts) {
+  // Only OAuth mailboxes are scanned here. Connector accounts (consumer gmail.com
+  // with a weekly-expiring token) are read by the agent and merged separately via
+  // loadConnectorMessages(), so a dead personal token can never halt the scan.
+  for (const account of oauthAccounts(accounts)) {
     results.push(await scanMailbox({ account, clientId, clientSecret }));
   }
 
   return results;
+}
+
+/**
+ * Load personal-mailbox messages the agent fetched through the Gmail connector
+ * and dumped to a JSON file (path in CONNECTOR_MESSAGES_FILE). Normalizes the
+ * connector's field names to the pipeline message shape. Connector messages have
+ * no RFC822 headers, so rfcMessageId/references/inReplyTo are empty and
+ * continuity falls back to Gmail thread ids + content keys.
+ *
+ * Expected file: { sourceAccount, messages: [ { id, threadId, sender,
+ * toRecipients, ccRecipients, subject, snippet, date, labelIds } ] }
+ * or a bare array of such messages.
+ */
+export function loadConnectorMessages(filePath = process.env.CONNECTOR_MESSAGES_FILE) {
+  if (!filePath) return [];
+
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync(filePath, 'utf8'));
+  } catch (err) {
+    console.warn(`Connector messages unavailable (${filePath}): ${err.message}`);
+    return [];
+  }
+
+  const defaultAccount = raw.sourceAccount || '';
+  const list = Array.isArray(raw) ? raw : (raw.messages || []);
+  return list.map(m => normalizeConnectorMessage(m, defaultAccount));
+}
+
+export function normalizeConnectorMessage(m, defaultAccount = '') {
+  const list = v => (Array.isArray(v) ? v.join(', ') : String(v || ''));
+  const ms = m.internalDate
+    ? Number(m.internalDate)
+    : (m.date ? Date.parse(m.date) || null : null);
+
+  return {
+    sourceAccount: (m.sourceAccount || defaultAccount || '').toLowerCase(),
+    gmailMessageId: m.id || m.gmailMessageId || '',
+    gmailThreadId: m.threadId || m.gmailThreadId || '',
+    labelIds: m.labelIds || [],
+    snippet: m.snippet || '',
+    internalDate: ms,
+    // Connector never exposes RFC822 headers.
+    rfcMessageId: '',
+    references: [],
+    inReplyTo: '',
+    from: m.from || m.sender || '',
+    to: m.to || list(m.toRecipients),
+    cc: m.cc || list(m.ccRecipients),
+    subject: m.subject || '',
+    date: m.date || '',
+    deliveredTo: '',
+    originalTo: '',
+    replyTo: ''
+  };
 }
 
 export async function scanMailbox({ account, clientId, clientSecret }) {

@@ -8,8 +8,9 @@
 
 import { getAccessToken } from './google-auth.mjs';
 import { readState } from './drive-state.mjs';
-import { scanConfiguredMailboxes } from './gmail-api.mjs';
+import { scanConfiguredMailboxes, loadConnectorMessages } from './gmail-api.mjs';
 import { dedupeMessages, groupConversations } from './continuity.mjs';
+import { pickDriveAccount } from './accounts.mjs';
 import { listTomorrowEventsForAccount } from './calendar-api.mjs';
 import { writeFileSync } from 'fs';
 
@@ -32,7 +33,7 @@ const accounts = JSON.parse(process.env.GMAIL_ACCOUNTS_JSON || '[]');
 const driveFileId = process.env.DRIVE_STATE_FILE_ID;
 
 // --- STEP 2: Load assistant memory ---
-const driveAccount = accounts[0];
+const driveAccount = pickDriveAccount(accounts);
 const driveRefreshToken = process.env[driveAccount.refreshTokenEnv];
 const driveAccessToken = await getAccessToken({ clientId, clientSecret, refreshToken: driveRefreshToken });
 
@@ -48,7 +49,7 @@ try {
 // --- STEP 2.5: Scan Gmail ---
 console.log('Scanning Gmail...');
 const mailboxResults = await scanConfiguredMailboxes();
-const allMessages = mailboxResults.flatMap(r => r.messages);
+const allMessages = [...mailboxResults.flatMap(r => r.messages), ...loadConnectorMessages()];
 const deduped = dedupeMessages(allMessages);
 const benEmails = accounts.map(a => a.email);
 const conversations = groupConversations(deduped, benEmails);

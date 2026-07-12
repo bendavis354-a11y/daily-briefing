@@ -6,8 +6,9 @@
 import fs from 'node:fs';
 import { getAccessToken } from './google-auth.mjs';
 import { readState, emptyState } from './drive-state.mjs';
-import { scanConfiguredMailboxes } from './gmail-api.mjs';
+import { scanConfiguredMailboxes, loadConnectorMessages } from './gmail-api.mjs';
 import { dedupeMessages, groupConversations } from './continuity.mjs';
+import { pickDriveAccount, isConnectorAccount } from './accounts.mjs';
 import { listTomorrowEventsForAccount, listCalendars, listEvents } from './calendar-api.mjs';
 
 // ── STEP 1: Dates ─────────────────────────────────────────────────────────────
@@ -74,15 +75,25 @@ if (!clientId || !clientSecret) throw new Error('Missing GOOGLE_OAUTH_CLIENT_ID 
 if (!accounts.length) throw new Error('GMAIL_ACCOUNTS_JSON is empty');
 
 // ── STEP 2: Load Drive state ──────────────────────────────────────────────────
+// State I/O rides a durable Workspace account (never the weekly-expiring
+// consumer token). The agent can also hand in a connector-read copy of the state
+// file via CONNECTOR_STATE_FILE, which is used in preference to a direct read.
 console.log('STEP 2: Loading Drive state…');
-const driveAccount = accounts[0];
+const driveAccount = pickDriveAccount(accounts);
 const driveRefreshToken = process.env[driveAccount.refreshTokenEnv];
 const driveToken = await getAccessToken({ clientId, clientSecret, refreshToken: driveRefreshToken });
+console.log(`Drive account: ${driveAccount.email}`);
 
 let assistantState;
+const connectorStateFile = process.env.CONNECTOR_STATE_FILE;
 try {
-  assistantState = await readState({ accessToken: driveToken, fileId: driveFileId });
-  console.log(`Drive state loaded (version=${assistantState.version}, updatedAt=${assistantState.updatedAt})`);
+  if (connectorStateFile) {
+    assistantState = JSON.parse(fs.readFileSync(connectorStateFile, 'utf8'));
+    console.log(`Drive state loaded from connector file (version=${assistantState.version}, updatedAt=${assistantState.updatedAt})`);
+  } else {
+    assistantState = await readState({ accessToken: driveToken, fileId: driveFileId });
+    console.log(`Drive state loaded (version=${assistantState.version}, updatedAt=${assistantState.updatedAt})`);
+  }
 } catch (err) {
   console.error('ERROR loading Drive state:', err.message);
   process.exit(1);
@@ -143,8 +154,10 @@ const accessTokensByAccount = Object.fromEntries(
   mailboxResults.map(r => [r.account.email, r.accessToken])
 );
 
-const allMessages = mailboxResults.flatMap(r => r.messages);
-console.log(`Raw messages: ${allMessages.length}`);
+const oauthMessages = mailboxResults.flatMap(r => r.messages);
+const connectorMessages = loadConnectorMessages();
+const allMessages = [...oauthMessages, ...connectorMessages];
+console.log(`Raw messages: ${allMessages.length} (oauth=${oauthMessages.length}, connector=${connectorMessages.length})`);
 
 const deduped = dedupeMessages(allMessages);
 console.log(`After dedupe: ${deduped.length}`);
@@ -168,6 +181,12 @@ const weekEvents = [];
 const seenCalIds = new Set();
 
 for (const account of accounts) {
+  // Connector accounts have no usable OAuth token; their calendar (if needed) is
+  // supplied by the agent through the Calendar connector, not scanned here.
+  if (isConnectorAccount(account)) {
+    console.log(`Skipping OAuth calendar scan for connector account ${account.email}`);
+    continue;
+  }
   const refreshToken = process.env[account.refreshTokenEnv];
   let accessToken;
   try {
@@ -243,22 +262,32 @@ const calendarProposals = [], suggestedReplies = [], todos = [];
 
 const accountIndex = Object.fromEntries(accounts.map((a, i) => [a.email, i]));
 
-// Build gmailLinks for a conversation's latest message
-function buildGmailLinks(convo) {
+// Build gmailLinks for a conversation's latest message. Cross-account duplicates
+// are merged during dedup, so per-account thread ids live on
+// latestMessage.gmailThreadIdByAccount as well as on individual messages.
+function threadIdsByAccount(convo) {
   const byAccount = {};
   for (const msg of convo.messages) {
-    if (!byAccount[msg.sourceAccount]) {
+    for (const [acct, tid] of Object.entries(msg.gmailThreadIdByAccount || {})) {
+      if (acct && tid && !byAccount[acct]) byAccount[acct] = tid;
+    }
+    if (msg.sourceAccount && msg.gmailThreadId && !byAccount[msg.sourceAccount]) {
       byAccount[msg.sourceAccount] = msg.gmailThreadId;
     }
   }
-  return Object.entries(byAccount).map(([sourceAccount, gmailThreadId]) => ({ sourceAccount, gmailThreadId }));
+  return byAccount;
+}
+
+function buildGmailLinks(convo) {
+  return Object.entries(threadIdsByAccount(convo))
+    .map(([sourceAccount, gmailThreadId]) => ({ sourceAccount, gmailThreadId }));
 }
 
 function mainGmailLink(convo) {
   // Prefer bendavis354@gmail.com copy for View Thread links
   const mainAccount = 'bendavis354@gmail.com';
-  const mainMsg = convo.messages.find(m => m.sourceAccount === mainAccount);
-  if (mainMsg) return { viewThreadAccount: mainAccount, viewThreadId: mainMsg.gmailThreadId };
+  const byAccount = threadIdsByAccount(convo);
+  if (byAccount[mainAccount]) return { viewThreadAccount: mainAccount, viewThreadId: byAccount[mainAccount] };
   const latest = convo.latestMessage;
   return { viewThreadAccount: latest.sourceAccount, viewThreadId: latest.gmailThreadId };
 }
