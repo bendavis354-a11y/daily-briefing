@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import { getAccessToken } from './google-auth.mjs';
 import { readState, writeState } from './drive-state.mjs';
+import { pickDriveAccount } from './accounts.mjs';
 
 const now = new Date();
 const accounts = JSON.parse(process.env.GMAIL_ACCOUNTS_JSON || '[]');
@@ -14,8 +15,9 @@ const driveFileId = process.env.DRIVE_STATE_FILE_ID;
 // Load cached state update data
 const updateData = JSON.parse(fs.readFileSync('/tmp/briefing-state-update.json', 'utf8'));
 
-// Re-authenticate for Drive write
-const driveAccount = accounts[0];
+// Re-authenticate for Drive write on the durable Workspace account (never the
+// weekly-expiring consumer token).
+const driveAccount = pickDriveAccount(accounts);
 const driveRefreshToken = process.env[driveAccount.refreshTokenEnv];
 const driveToken = await getAccessToken({ clientId, clientSecret, refreshToken: driveRefreshToken });
 

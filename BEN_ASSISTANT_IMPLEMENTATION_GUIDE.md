@@ -96,10 +96,27 @@ STATE_ENCRYPTION_KEY=...
 GOOGLE_OAUTH_CLIENT_ID=...
 GOOGLE_OAUTH_CLIENT_SECRET=...
 GMAIL_ACCOUNTS_JSON=...
+DRIVE_STATE_ACCOUNT=ben@heartspringgardens.org
 DRIVE_STATE_FILE_ID=...
 DRIVE_PENDING_ACTIONS_FILE_ID=...
 GITHUB_PAGES_URL=https://USERNAME.github.io/REPO-NAME/
 ```
+
+### Durability model (personal account)
+
+Consumer `gmail.com` accounts only receive 7-day OAuth refresh tokens from an
+unverified app — publishing the app to production does **not** extend them (that
+only helps paid Workspace accounts). So the personal mailbox is **not** scanned
+over custom OAuth. Instead:
+
+- Personal mailbox → marked `"auth": "connector"` and read by the agent through
+  the durable **Gmail connector** (see `prompts/routine-prompt.md`), handed to the
+  Node pipeline via `CONNECTOR_MESSAGES_FILE`.
+- Workspace mailboxes → durable custom OAuth (`"auth": "oauth"`, the default).
+- Drive state → read via the Drive connector (`CONNECTOR_STATE_FILE`) and written
+  back with a durable **Workspace** account. `DRIVE_STATE_ACCOUNT` names that
+  account; it must have a refresh token with Drive scope and be able to write
+  `DRIVE_STATE_FILE_ID`. Nothing depends on the weekly-expiring personal token.
 
 `GMAIL_ACCOUNTS_JSON` should look like this:
 
@@ -108,25 +125,31 @@ GITHUB_PAGES_URL=https://USERNAME.github.io/REPO-NAME/
   {
     "email": "bendavis354@gmail.com",
     "type": "Personal",
-    "calendarHint": "Primary calendar",
-    "refreshTokenEnv": "GMAIL_REFRESH_TOKEN_PERSONAL"
+    "auth": "connector",
+    "calendarHint": "Primary calendar (via connector)"
   },
   {
     "email": "ben@heartspringgardens.org",
     "type": "Business",
+    "auth": "oauth",
+    "role": "drive",
     "calendarHint": "Heartspring Gardens calendar",
     "refreshTokenEnv": "GMAIL_REFRESH_TOKEN_HEARTSPRING"
   },
   {
     "email": "benjamin@biodynamics.com",
     "type": "Business",
+    "auth": "oauth",
     "calendarHint": "Biodynamics calendar",
     "refreshTokenEnv": "GMAIL_REFRESH_TOKEN_BIODYNAMICS"
   }
 ]
 ```
 
-Add each referenced refresh token as its own secret environment variable.
+`auth` defaults to `"oauth"` when omitted. Connector accounts need no
+`refreshTokenEnv`. The `role: "drive"` account (or `DRIVE_STATE_ACCOUNT`) is used
+for all Drive state I/O; its refresh token must include Drive scope. Add each
+referenced refresh token as its own secret environment variable.
 
 ## 5. Gmail API Setup
 
