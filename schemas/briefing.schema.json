@@ -75,6 +75,102 @@
         "newsletter": { "type": "array" },
         "spam": { "type": "array" }
       }
+    },
+    "narrative": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["headline", "story", "arcs"],
+      "properties": {
+        "headline": { "type": "string", "maxLength": 160 },
+        "story": { "type": "string" },
+        "arcs": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["id", "title", "today"],
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "account": { "type": "string" },
+              "importance": { "type": "number" },
+              "trend": { "type": "string", "enum": ["rising", "steady", "waiting", "stalling", "closing", "new"] },
+              "stakes": { "type": "string" },
+              "soFar": { "type": "string" },
+              "today": { "type": "string" },
+              "heading": { "type": "string" },
+              "needs": { "type": "string" },
+              "conversationKeys": { "type": "array", "items": { "type": "string" } },
+              "viewThreadAccount": { "type": "string" },
+              "viewThreadId": { "type": "string" },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": ["type", "label"],
+                  "properties": {
+                    "type": { "type": "string", "enum": ["reply", "open", "calendar"] },
+                    "label": { "type": "string" },
+                    "account": { "type": "string" },
+                    "to": { "type": "string" },
+                    "subject": { "type": "string" },
+                    "body": { "type": "string" },
+                    "threadId": { "type": "string" },
+                    "title": { "type": "string" },
+                    "start": { "type": "string" },
+                    "end": { "type": "string" },
+                    "location": { "type": "string" },
+                    "details": { "type": "string" }
+                  }
+                }
+              },
+              "memory": { "type": "string" }
+            }
+          }
+        },
+        "decisions": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["question"],
+            "properties": {
+              "question": { "type": "string" },
+              "context": { "type": "string" },
+              "leaning": { "type": "string" },
+              "arcId": { "type": "string" },
+              "options": { "type": "array" }
+            }
+          }
+        },
+        "quickHits": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["text"],
+            "properties": {
+              "text": { "type": "string" },
+              "account": { "type": "string" },
+              "source": { "type": "string" },
+              "viewThreadAccount": { "type": "string" },
+              "viewThreadId": { "type": "string" }
+            }
+          }
+        },
+        "noise": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "count": { "type": "number" },
+            "note": { "type": "string" }
+          }
+        }
+      }
     }
   }
 }

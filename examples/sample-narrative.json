@@ -1,0 +1,76 @@
+{
+  "headline": "The Heartspring deposit is the one thing that can't wait — and Leila's grant door is still open.",
+  "story": "Money is moving at Heartspring: Maya needs the deposit confirmed by end of day or the spring order slips a week. That's the day's one hard deadline.\n\nOn the BDA side it's quiet — but usefully quiet: Zachary's report landed and the ABO fund math is settled, so you can close that loop with the board whenever you're ready.\n\nPersonally, Ari is still waiting on a dinner answer (day 2), and tomorrow morning is fuller than it looks — the greenhouse call at 9 needs the supplier numbers you haven't received yet.",
+  "arcs": [
+    {
+      "id": "hs-spring-deposit",
+      "title": "The spring order deposit",
+      "account": "ben@heartspringgardens.org",
+      "importance": 5,
+      "trend": "rising",
+      "stakes": "The whole spring planting order hangs on this confirmation.",
+      "soFar": "Maya flagged the deposit Monday; you asked for the revised quote Tuesday and it hasn't come back.",
+      "today": "Maya escalated: she needs confirmation before end of day for the order to proceed.",
+      "heading": "Confirm today and the order ships on schedule; miss it and planting slips a week.",
+      "needs": "A two-line confirmation reply — draft is ready.",
+      "conversationKeys": [],
+      "viewThreadAccount": "ben@heartspringgardens.org",
+      "viewThreadId": "18f123sample",
+      "actions": [
+        { "type": "reply", "label": "Send the confirmation", "account": "ben@heartspringgardens.org", "to": "maya@example.com", "subject": "Re: Deposit confirmation needed today", "body": "Hi Maya,\n\nConfirmed — go ahead with the deposit as quoted. I'll have the remaining details to you by tomorrow morning.\n\nThanks for keeping this on track,\nBen" },
+        { "type": "open", "label": "Open thread" }
+      ],
+      "memory": "Confirmed deposit 7/25 (pending Ben's send). Watch for Maya's shipping confirmation; revised supplier quote still outstanding."
+    },
+    {
+      "id": "bda-abo-funds",
+      "title": "ABO funds: the math is settled",
+      "account": "benjamin@biodynamics.com",
+      "importance": 3,
+      "trend": "closing",
+      "stakes": "Board needs a clean number before directing this year's ABO allocation.",
+      "soFar": "You asked Zachary for last FY's ABO figures two weeks ago; he sent the report: $16,670 carried over.",
+      "today": "Quiet. Nothing new — the loop is yours to close.",
+      "heading": "One summary note to the board and this arc is done.",
+      "needs": "",
+      "conversationKeys": [],
+      "viewThreadAccount": "benjamin@biodynamics.com",
+      "viewThreadId": "18f456sample",
+      "actions": [ { "type": "open", "label": "Open thread" } ],
+      "memory": "ABO carryover confirmed at $16,670. Waiting on Ben to summarize to board; then close."
+    },
+    {
+      "id": "personal-ari-dinner",
+      "title": "Dinner with Ari",
+      "account": "bendavis354@gmail.com",
+      "importance": 2,
+      "trend": "waiting",
+      "stakes": "Small, but it's day 2 — friends notice.",
+      "today": "Ari asked again: Wednesday or Thursday?",
+      "heading": "Thursday looks clearer on your calendar.",
+      "needs": "Pick a night.",
+      "viewThreadAccount": "bendavis354@gmail.com",
+      "viewThreadId": "18f789sample",
+      "actions": [
+        { "type": "reply", "label": "Say Thursday", "account": "bendavis354@gmail.com", "to": "ari@example.com", "subject": "Re: Dinner this week?", "body": "Thursday works great — 7ish? Looking forward to it.\n\nBen" }
+      ],
+      "memory": "Proposed Thursday dinner to Ari on 7/25; awaiting confirmation."
+    }
+  ],
+  "decisions": [
+    {
+      "question": "Confirm Maya's deposit today?",
+      "context": "Order proceeds only with today's confirmation; the revised quote you wanted hasn't arrived, but the base quote stands.",
+      "leaning": "Yes — the quote delta is small and a week's slip costs more.",
+      "arcId": "hs-spring-deposit",
+      "options": [
+        { "label": "Yes — send the confirmation", "action": { "type": "reply", "label": "Yes — send the confirmation", "account": "ben@heartspringgardens.org", "to": "maya@example.com", "subject": "Re: Deposit confirmation needed today", "body": "Hi Maya,\n\nConfirmed — go ahead.\n\nBen" } },
+        { "label": "Hold for the revised quote" }
+      ]
+    }
+  ],
+  "quickHits": [
+    { "text": "Supplier Desk still owes you the revised quote — day 2 of waiting.", "account": "ben@heartspringgardens.org", "viewThreadAccount": "ben@heartspringgardens.org", "viewThreadId": "18fwaitsample" }
+  ],
+  "noise": { "count": 2, "note": "one newsletter, one promo — the Local Food Digest had the market schedule if you want it later." }
+}

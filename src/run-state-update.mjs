@@ -61,6 +61,38 @@ for (const c of updateData.conversations) {
   };
 }
 
+// Persist storylines — the narrative memory that lets tomorrow's briefing tell
+// a continuing story instead of starting cold. Each arc carries a compact
+// `memory` line ("what to remember for tomorrow"). Keep arcs briefed within the
+// last 45 days; stale storylines age out.
+const CUTOFF_MS = 45 * 24 * 3600 * 1000;
+const storylines = {};
+for (const [id, s] of Object.entries(currentState.storylines || {})) {
+  const last = Date.parse(s.lastBriefedAt || 0);
+  if (last && now - last < CUTOFF_MS) storylines[id] = s;
+}
+for (const arc of updateData.arcs || []) {
+  const prior = storylines[arc.id] || {};
+  storylines[arc.id] = {
+    ...prior,
+    id: arc.id,
+    title: arc.title,
+    account: arc.account || prior.account || '',
+    trend: arc.trend,
+    stakes: arc.stakes || prior.stakes || '',
+    importance: arc.importance,
+    memory: arc.memory,
+    // Rolling history of the last few briefed beats, oldest → newest.
+    history: [...(prior.history || []), `${now.toISOString().slice(0, 10)}: ${arc.memory}`].slice(-7),
+    conversationKeys: [...new Set([...(prior.conversationKeys || []), ...(arc.conversationKeys || [])])].slice(-20),
+    lastBriefedAt: now.toISOString()
+  };
+  // Stamp member conversations with their arc so continuity survives re-keying.
+  for (const key of arc.conversationKeys || []) {
+    if (newConversations[key]) newConversations[key].arcId = arc.id;
+  }
+}
+
 // Build open tasks from todos
 const openTasks = (updateData.todos || []).map(t => ({
   text: t.text,
@@ -83,6 +115,7 @@ const updatedState = {
   ...currentState,
   updatedAt: now.toISOString(),
   conversations: newConversations,
+  storylines,
   openTasks,
   recentRuns
 };

@@ -1,3 +1,16 @@
+/**
+ * Render the daily briefing as a narrative "chief of staff" page.
+ *
+ * Reads briefing.json (facts gathered by scripts + `narrative` written by the
+ * agent's synthesis step), validates against schemas/briefing.schema.json, and
+ * writes dist/briefing.plain.html for encrypt-page.mjs.
+ *
+ * Design intent: this is a briefing, not an inbox mirror. The story leads;
+ * storylines carry memory (so far → today → heading → needs); decisions arrive
+ * teed up with one-click actions; raw categorized mail survives only as a
+ * collapsed appendix. If the narrative is missing (synthesis failed), a plain
+ * fallback keeps the page useful.
+ */
 import fs from 'node:fs';
 import Ajv from 'ajv/dist/2020.js';
 
@@ -14,1315 +27,521 @@ if (!validate(briefing)) {
   process.exit(1);
 }
 
+const meta = briefing.metadata || {};
 const sections = briefing.sections || {};
-const calendars = briefing.calendars?.length ? briefing.calendars : defaultCalendars();
-const todayISO = localISODate(new Date(), briefing.metadata.timezone);
-const isStale = briefing.metadata.date !== todayISO;
+const narrative = briefing.narrative || null;
+const TZ = meta.timezone || 'America/New_York';
+const todayISO = localISODate(new Date(), TZ);
+const isStale = meta.date !== todayISO;
 
-// ── tab badge counts ────────────────────────────────────────────────────────
-const emailCount = [sections.urgent, sections.business, sections.personal, sections.financial, sections.waiting]
-  .reduce((n, arr) => n + (arr?.length || 0), 0);
-const taskCount = sections.todos?.length || 0;
-const calCount = sections.tomorrowSchedule?.length || 0;
-const suggCount = (sections.calendarProposals?.length || 0) + (sections.suggestedReplies?.length || 0);
-const fyiCount = (sections.newsletter?.length || 0) + (sections.spam?.length || 0);
-const imsgCount = (sections.imessage || []).filter(m => m.needsReply || m.priority === 'high').length;
-
-function badge(n) {
-  return n ? `<span class="tab-badge">${n}</span>` : '';
+// ── account identity ─────────────────────────────────────────────────────────
+// Ben's three hats: Biodynamic Association board, Heartspring Gardens startup,
+// personal life. Each gets a stable hue so a glance places every item.
+const ACCOUNT_META = {};
+for (const a of briefing.accounts || []) {
+  const email = (a.email || '').toLowerCase();
+  let cls = 'acct-other';
+  if (email.includes('biodynamics')) cls = 'acct-bda';
+  else if (email.includes('heartspring')) cls = 'acct-hs';
+  else if (email) cls = 'acct-personal';
+  ACCOUNT_META[email] = { label: a.label || a.email, cls };
+}
+function acct(email) {
+  const key = String(email || '').toLowerCase();
+  return ACCOUNT_META[key] || { label: shortAcct(email), cls: 'acct-other' };
+}
+function shortAcct(email) {
+  const e = String(email || '');
+  if (e.includes('biodynamics')) return 'Biodynamics';
+  if (e.includes('heartspring')) return 'Heartspring';
+  if (e.includes('gmail')) return 'Personal';
+  return e || '—';
+}
+function acctChip(email) {
+  if (!email) return '';
+  const { label, cls } = acct(email);
+  return `<span class="chip ${cls}">${esc(label)}</span>`;
 }
 
-// ── greeting ────────────────────────────────────────────────────────────────
-function greeting() {
-  const h = parseInt(new Intl.DateTimeFormat('en-US', {
-    timeZone: briefing.metadata.timezone || 'America/New_York',
-    hour: 'numeric', hour12: false
-  }).format(new Date()));
-  if (h < 12) return 'Good morning, Ben';
-  if (h < 17) return 'Good afternoon, Ben';
-  return 'Good evening, Ben';
+// ── trend vocabulary ─────────────────────────────────────────────────────────
+const TREND = {
+  rising: { glyph: '↗', label: 'gaining momentum', cls: 'trend-rising' },
+  steady: { glyph: '→', label: 'steady', cls: 'trend-steady' },
+  waiting: { glyph: '◷', label: 'waiting on them', cls: 'trend-waiting' },
+  stalling: { glyph: '↘', label: 'stalling — needs a nudge', cls: 'trend-stalling' },
+  closing: { glyph: '✓', label: 'wrapping up', cls: 'trend-closing' },
+  new: { glyph: '✦', label: 'new this week', cls: 'trend-new' }
+};
+function trendChip(t) {
+  const tr = TREND[t] || TREND.steady;
+  return `<span class="trend ${tr.cls}" title="${esc(tr.label)}">${tr.glyph} ${esc(tr.label)}</span>`;
 }
 
-// ── HTML ────────────────────────────────────────────────────────────────────
+// ── links (all actions are plain <a target="_blank">; nothing auto-sends) ────
+function threadLink(account, threadId) {
+  if (!threadId) return '';
+  return `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(account || '')}#all/${encodeURIComponent(threadId)}`;
+}
+function composeLink({ account, to, subject, body }) {
+  const p = new URLSearchParams({ view: 'cm', fs: '1' });
+  if (account) p.set('authuser', account);
+  if (to) p.set('to', to);
+  if (subject) p.set('su', subject);
+  if (body) p.set('body', body);
+  return `https://mail.google.com/mail/?${p.toString()}`;
+}
+function calendarTemplateLink({ title, start, end, details, location }) {
+  const p = new URLSearchParams({ action: 'TEMPLATE', text: title || 'New event' });
+  const s = calStamp(start);
+  const e = calStamp(end) || s;
+  if (s) p.set('dates', `${s}/${e}`);
+  if (details) p.set('details', details);
+  if (location) p.set('location', location);
+  return `https://calendar.google.com/calendar/render?${p.toString()}`;
+}
+function calStamp(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+function extA(href, cls, label) {
+  return `<a class="${cls}" href="${escAttr(href)}" target="_blank" rel="noopener">${label}</a>`;
+}
+
+// ── narrative components ─────────────────────────────────────────────────────
+function hero() {
+  const n = narrative || fallbackNarrative();
+  const dateLine = meta.todayLabel || meta.date;
+  return `
+  <section class="hero">
+    <div class="kicker">Chief of staff briefing · ${esc(dateLine)}</div>
+    <h1>${esc(n.headline)}</h1>
+    <div class="story">${n.story.split(/\n\n+/).map(p => `<p>${esc(p)}</p>`).join('')}</div>
+  </section>`;
+}
+
+function accountLegend() {
+  const chips = (briefing.accounts || []).map(a => {
+    const { label, cls } = acct(a.email);
+    return `<button class="chip ${cls} filter-chip" data-account="${escAttr((a.email || '').toLowerCase())}" onclick="filterAccount(this)">${esc(label)}</button>`;
+  }).join('');
+  return `<div class="legend" role="group" aria-label="Filter by account">
+    <button class="chip acct-all filter-chip active" data-account="all" onclick="filterAccount(this)">All</button>${chips}
+  </div>`;
+}
+
+function storylines() {
+  const n = narrative || fallbackNarrative();
+  const arcs = [...(n.arcs || [])].sort((a, b) => (b.importance || 3) - (a.importance || 3));
+  if (!arcs.length) return '';
+  return `
+  <section class="block">
+    <h2 class="block-title">The storylines</h2>
+    ${arcs.map(arcCard).join('')}
+  </section>`;
+}
+
+function arcCard(arc) {
+  const email = (arc.account || '').toLowerCase();
+  const beats = [
+    arc.soFar ? beat('The story so far', arc.soFar) : '',
+    beat('Today', arc.today),
+    arc.heading ? beat('Where it’s heading', arc.heading) : ''
+  ].join('');
+  const needs = arc.needs
+    ? `<div class="needs"><span class="needs-label">Needs from you</span>${esc(arc.needs)}</div>`
+    : '';
+  const openHref = threadLink(arc.viewThreadAccount || arc.account, arc.viewThreadId);
+  const autoOpen = openHref && !(arc.actions || []).some(a => a.type === 'open')
+    ? extA(openHref, 'btn btn-quiet', 'Open thread')
+    : '';
+  return `
+  <article class="arc" data-account="${escAttr(email)}">
+    <header class="arc-head">
+      <div class="arc-chips">${acctChip(arc.account)}${trendChip(arc.trend)}</div>
+      <h3 class="arc-title">${esc(arc.title)}</h3>
+      ${arc.stakes ? `<div class="stakes">${esc(arc.stakes)}</div>` : ''}
+    </header>
+    <div class="arc-body">${beats}</div>
+    ${needs}
+    <div class="actions">${(arc.actions || []).map(a => actionButton(a, arc)).join('')}${autoOpen}</div>
+  </article>`;
+}
+
+function beat(label, text) {
+  return `<div class="beat"><span class="beat-label">${label}</span><span class="beat-text">${esc(text)}</span></div>`;
+}
+
+function actionButton(a, arc) {
+  const account = a.account || arc?.viewThreadAccount || arc?.account || '';
+  if (a.type === 'reply') {
+    return extA(composeLink({ account, to: a.to, subject: a.subject, body: a.body }), 'btn btn-primary', esc(a.label));
+  }
+  if (a.type === 'calendar') {
+    return extA(calendarTemplateLink(a), 'btn btn-cal', esc(a.label));
+  }
+  if (a.type === 'open') {
+    const href = threadLink(account, a.threadId || arc?.viewThreadId);
+    return href ? extA(href, 'btn btn-quiet', esc(a.label)) : '';
+  }
+  return '';
+}
+
+function decisions() {
+  const list = narrative?.decisions || [];
+  if (!list.length) return '';
+  return `
+  <section class="block">
+    <h2 class="block-title">Decisions, teed up</h2>
+    <ol class="decision-list">
+      ${list.map(d => `
+      <li class="decision" ${d.arcId ? `data-arc="${escAttr(d.arcId)}"` : ''}>
+        <div class="decision-q">${esc(d.question)}</div>
+        ${d.context ? `<div class="decision-ctx">${esc(d.context)}</div>` : ''}
+        ${d.leaning ? `<div class="decision-lean">My read: ${esc(d.leaning)}</div>` : ''}
+        <div class="actions">${(d.options || []).map(o => decisionOption(o)).join('')}</div>
+      </li>`).join('')}
+    </ol>
+  </section>`;
+}
+
+function decisionOption(o) {
+  if (o?.action?.type) return actionButton(o.action, null) || `<span class="option">${esc(o.label || '')}</span>`;
+  return o?.label ? `<span class="option">${esc(o.label)}${o.detail ? ` — ${esc(o.detail)}` : ''}</span>` : '';
+}
+
+// ── schedule ─────────────────────────────────────────────────────────────────
+function schedule() {
+  const tomorrow = sections.tomorrowSchedule || [];
+  const week = sections.weekSchedule || [];
+  const proposals = sections.calendarProposals || [];
+  if (!tomorrow.length && !week.length && !proposals.length) return '';
+  return `
+  <section class="block">
+    <h2 class="block-title">${esc(meta.tomorrowLabel || 'Tomorrow')}</h2>
+    <div id="tomorrow-schedule" class="timeline">
+      ${tomorrow.length ? tomorrow.map(eventRow).join('') : '<div class="empty">Nothing on the calendar tomorrow — a clear runway.</div>'}
+    </div>
+    ${proposals.length ? `
+    <h3 class="sub-title">Wants a spot on the calendar</h3>
+    ${proposals.map(proposalCard).join('')}` : ''}
+    ${week.length > tomorrow.length ? `
+    <details class="week"><summary>Rest of the week (${week.length} events)</summary>
+      <div class="timeline">${week.map(eventRow).join('')}</div>
+    </details>` : ''}
+  </section>`;
+}
+
+function eventRow(ev) {
+  const t = ev.allDay ? 'All day' : fmtTime(ev.start);
+  return `<div class="event">
+    <span class="event-time">${esc(t)}</span>
+    <span class="event-dot" style="--dot:${escAttr(ev.color || '#3A7556')}"></span>
+    <span class="event-body"><strong>${esc(ev.title)}</strong>${ev.location ? ` · ${esc(ev.location)}` : ''}<span class="event-cal">${esc(ev.calendarName || '')}</span></span>
+    ${ev.htmlLink ? extA(ev.htmlLink, 'btn btn-mini', 'Open') : ''}
+  </div>`;
+}
+
+function proposalCard(p, i) {
+  const id = `prop-${i}`;
+  const start = p.start || defaultStart();
+  const end = p.end || '';
+  const href = calendarTemplateLink({ title: p.title, start, end, details: p.context || p.detail, location: p.location });
+  return `<div class="proposal" data-account="${escAttr((p.account || '').toLowerCase())}">
+    <div class="proposal-head">${acctChip(p.account)}<strong>${esc(p.title)}</strong></div>
+    ${p.context ? `<div class="proposal-ctx">${esc(p.context)}</div>` : ''}
+    <div class="proposal-controls">
+      <input type="datetime-local" id="${id}-start" value="${escAttr(toLocalInput(start))}" onchange="updateCalLink('${id}')">
+      <a id="${id}-link" class="btn btn-cal" href="${escAttr(href)}" target="_blank" rel="noopener"
+         data-title="${escAttr(p.title || '')}" data-details="${escAttr(p.context || p.detail || '')}" data-location="${escAttr(p.location || '')}"
+         onclick="addToSchedule('${id}')">Add to calendar</a>
+    </div>
+  </div>`;
+}
+
+// ── quick hits + noise ───────────────────────────────────────────────────────
+function quickHits() {
+  const list = narrative?.quickHits || [];
+  if (!list.length) return '';
+  return `
+  <section class="block">
+    <h2 class="block-title">Quick hits</h2>
+    <ul class="hits">
+      ${list.map(q => {
+        const href = q.viewThreadId ? threadLink(q.viewThreadAccount || q.account, q.viewThreadId) : '';
+        return `<li data-account="${escAttr((q.account || '').toLowerCase())}">${acctChip(q.account)} ${esc(q.text)}${href ? ` ${extA(href, 'hit-link', 'view')}` : ''}</li>`;
+      }).join('')}
+    </ul>
+  </section>`;
+}
+
+function noiseLine() {
+  const n = narrative?.noise;
+  const count = n?.count ?? ((sections.newsletter?.length || 0) + (sections.spam?.length || 0));
+  if (!count && !n?.note) return '';
+  const note = n?.note || 'newsletters, promotions, and receipts — nothing that needs you.';
+  return `<div class="noise">Compressed ${count} lower-signal messages: ${esc(note)}</div>`;
+}
+
+// ── appendix: the raw inbox, demoted to a collapsed reference ────────────────
+function appendix() {
+  const groups = [
+    ['Urgent', sections.urgent], ['Business', sections.business], ['Personal', sections.personal],
+    ['Financial', sections.financial], ['Waiting on others', sections.waiting],
+    ['Newsletters', sections.newsletter], ['Spam', sections.spam]
+  ].filter(([, list]) => list?.length);
+  const imsgs = (sections.imessage || []).filter(m => !String(m.id).includes('notice'));
+  if (!groups.length && !imsgs.length) return '';
+  return `
+  <section class="block appendix">
+    <details><summary>Everything else — the full sorted inbox (${groups.reduce((n, [, l]) => n + l.length, 0)} threads${imsgs.length ? `, ${imsgs.length} text conversations` : ''})</summary>
+      ${imsgs.length ? `<h3 class="sub-title">Texts</h3><ul class="raw-list">${imsgs.map(m =>
+        `<li><strong>${esc(m.sender)}</strong> — ${esc(m.summary)}${m.needsReply ? ' <span class="tag-reply">reply</span>' : ''}</li>`).join('')}</ul>` : ''}
+      ${groups.map(([name, list]) => `
+      <h3 class="sub-title">${name} (${list.length})</h3>
+      <ul class="raw-list">
+        ${list.map(it => {
+          const href = it.viewThreadId || it.gmailThreadId ? threadLink(it.viewThreadAccount || it.account, it.viewThreadId || it.gmailThreadId) : '';
+          return `<li data-account="${escAttr((it.account || '').toLowerCase())}">${acctChip(it.account)} <strong>${esc(it.senderName || it.sender || '')}</strong> — ${esc(it.subject || '')}${href ? ` ${extA(href, 'hit-link', 'open')}` : ''}</li>`;
+        }).join('')}
+      </ul>`).join('')}
+    </details>
+  </section>`;
+}
+
+function footer() {
+  const s = briefing.stats || {};
+  const tracked = narrative?.arcs?.length || 0;
+  return `
+  <footer>
+    <div>Scanned ${s.emailsScanned ?? 0} messages across ${(briefing.accounts || []).length} accounts · following ${tracked} storylines in memory · generated ${esc(fmtTime(meta.generatedAt))}</div>
+    <div>No emails are ever sent automatically. Every button opens Gmail or Calendar for you to review and send.</div>
+  </footer>`;
+}
+
+function staleWarning() {
+  return `<div class="stale">This briefing is from ${esc(meta.date)} — a newer run hasn't landed yet. Treat details as possibly out of date.</div>`;
+}
+
+// ── fallback when synthesis didn't run ───────────────────────────────────────
+function fallbackNarrative() {
+  const urgent = sections.urgent || [];
+  const replies = sections.suggestedReplies || [];
+  const waiting = sections.waiting || [];
+  const arcs = [...urgent.map(u => ({
+    id: `fb-${u.conversationKey || u.subject}`, title: u.subject || 'Urgent thread',
+    account: u.account, trend: 'rising', importance: 5,
+    stakes: 'Flagged urgent by the scanner.', today: u.summary || u.snippet || '',
+    needs: 'Review and respond.', viewThreadAccount: u.viewThreadAccount || u.account, viewThreadId: u.viewThreadId || u.gmailThreadId,
+    actions: []
+  })), ...replies.slice(0, 4).map(r => ({
+    id: `fb-r-${r.conversationKey || r.subject}`, title: r.title || `Reply to ${r.senderName || r.senderEmail}`,
+    account: r.account, trend: 'waiting', importance: 4,
+    stakes: '', today: r.detail || '', needs: 'A reply from you.',
+    viewThreadAccount: r.viewThreadAccount || r.account, viewThreadId: r.viewThreadId || r.gmailThreadId,
+    actions: [{ type: 'reply', label: 'Draft reply', account: r.account, to: r.to || r.senderEmail, subject: r.subject ? `Re: ${r.subject.replace(/^re:\s*/i, '')}` : '', body: r.body || '' }]
+  }))].slice(0, 6);
+  return {
+    headline: 'Today’s briefing (narrative unavailable — showing the essentials)',
+    story: 'The synthesis step didn’t run this time, so this is the scanner’s straight read: the items below are what most plausibly need you, with drafts where possible. Full sorted mail is in the appendix.',
+    arcs,
+    quickHits: waiting.slice(0, 6).map(w => ({ text: `Waiting on ${w.senderName || w.sender}: ${w.subject}`, account: w.account, viewThreadAccount: w.viewThreadAccount, viewThreadId: w.viewThreadId })),
+    noise: null,
+    decisions: []
+  };
+}
+
+// ── page ─────────────────────────────────────────────────────────────────────
 const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Daily Briefing</title>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <title>Daily Briefing — ${esc(meta.date)}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>${css()}</style>
 </head>
 <body>
-  <header class="topbar">
-    <div class="topbar-brand">
-      <div class="kicker">Ben Assistant</div>
-      <div class="top-title">Daily Briefing</div>
-    </div>
-    <div class="topbar-meta">
-      <span class="meta-pill">${esc(briefing.metadata.date)}</span>
-      <span class="meta-pill">${actionCount()} actions</span>
-    </div>
-  </header>
-
-  <nav class="workspace-nav" role="navigation" aria-label="Workspace tabs">
-    <button class="tab-btn active" data-tab="today" onclick="switchTab('today',this)">Today</button>
-    <button class="tab-btn" data-tab="email" onclick="switchTab('email',this)">Email${badge(emailCount)}</button>
-    <button class="tab-btn" data-tab="tasks" onclick="switchTab('tasks',this)">Tasks${badge(taskCount)}</button>
-    <button class="tab-btn" data-tab="calendar" onclick="switchTab('calendar',this)">Calendar${badge(calCount)}</button>
-    <button class="tab-btn" data-tab="suggestions" onclick="switchTab('suggestions',this)">Suggestions${badge(suggCount)}</button>
-    <button class="tab-btn" data-tab="messages" onclick="switchTab('messages',this)">Messages${badge(imsgCount)}</button>
-    <button class="tab-btn" data-tab="fyi" onclick="switchTab('fyi',this)">FYI${badge(fyiCount)}</button>
-  </nav>
-
   <main>
     ${isStale ? staleWarning() : ''}
-
-    <div id="tab-today" class="tab-panel active">
-      ${todayPanel()}
-    </div>
-
-    <div id="tab-email" class="tab-panel">
-      ${emailPanel()}
-    </div>
-
-    <div id="tab-tasks" class="tab-panel">
-      ${tasksPanel()}
-    </div>
-
-    <div id="tab-calendar" class="tab-panel">
-      ${calendarPanel()}
-    </div>
-
-    <div id="tab-suggestions" class="tab-panel">
-      ${suggestionsPanel()}
-    </div>
-
-    <div id="tab-messages" class="tab-panel">
-      ${imessagesPanel()}
-    </div>
-
-    <div id="tab-fyi" class="tab-panel">
-      ${fyiPanel()}
-    </div>
+    ${hero()}
+    ${accountLegend()}
+    ${storylines()}
+    ${decisions()}
+    ${schedule()}
+    ${quickHits()}
+    ${noiseLine()}
+    ${appendix()}
   </main>
-
-  <footer>No emails sent automatically. Replies open Gmail compose; Ben writes and sends.</footer>
+  ${footer()}
   <script>${clientJs()}</script>
 </body>
 </html>`;
 
 fs.mkdirSync('dist', { recursive: true });
 fs.writeFileSync(outPath, html);
-console.log(`Rendered ${outPath}`);
+console.log(`Rendered ${outPath}${narrative ? '' : ' (fallback mode — no narrative present)'}`);
 
-// ── tab panels ───────────────────────────────────────────────────────────────
-
-function todayPanel() {
-  const todayUrgent = sections.urgent || [];
-  const schedulePreview = (sections.tomorrowSchedule || []).slice(0, 4);
-  const todoPreview = (sections.todos || []).slice(0, 3);
-
-  return `
-    <section class="today-hero">
-      <div class="hero-text">
-        <h1>${esc(greeting())}</h1>
-        <p class="hero-summary">${esc(summaryLine())}</p>
-      </div>
-      <div class="build-meta">
-        <div>Generated</div>
-        <strong>${esc(formatDateTime(briefing.metadata.generatedAt))}</strong>
-        <div>Fresh through</div>
-        <strong>${esc(formatDateTime(briefing.metadata.dataFreshThrough))}</strong>
-      </div>
-    </section>
-
-    ${statsRow()}
-
-    ${todayUrgent.length ? `
-    <section class="today-block">
-      ${sectionHeader('Needs Attention', 'urgent')}
-      <div class="card-grid compact">
-        ${todayUrgent.map(item => emailCardCompact(item, 'urgent')).join('')}
-      </div>
-    </section>` : ''}
-
-    <section class="today-two-col">
-      <div class="today-col">
-        ${sectionHeader(briefing.metadata.tomorrowLabel || 'Tomorrow', 'calendar')}
-        ${schedulePreview.length
-          ? `<div class="schedule-list">${schedulePreview.map(scheduleEventCompact).join('')}</div>
-             ${(sections.tomorrowSchedule || []).length > 4
-               ? `<button class="see-more-btn" onclick="switchTab('calendar',document.querySelector('[data-tab=calendar]'))">See all ${(sections.tomorrowSchedule || []).length} events &rarr;</button>` : ''}`
-          : `<div class="no-data">No events tomorrow</div>`}
-      </div>
-      <div class="today-col">
-        ${sectionHeader('Open Tasks', 'todo')}
-        ${todoPreview.length
-          ? `<div class="todo-list">${todoPreview.map(item => todoItem(item)).join('')}</div>
-             ${taskCount > 3
-               ? `<button class="see-more-btn" onclick="switchTab('tasks',document.querySelector('[data-tab=tasks]'))">See all ${taskCount} tasks &rarr;</button>` : ''}`
-          : `<div class="no-data">No open tasks</div>`}
-      </div>
-    </section>`;
+// ── utilities ────────────────────────────────────────────────────────────────
+function esc(v) {
+  return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function escAttr(v) { return esc(v).replace(/'/g, '&#39;'); }
+function localISODate(date, tz) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+  const o = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  return `${o.year}-${o.month}-${o.day}`;
+}
+function fmtTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(d);
+}
+function toLocalInput(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d);
+  const o = Object.fromEntries(p.map(x => [x.type, x.value]));
+  return `${o.year}-${o.month}-${o.day}T${o.hour}:${o.minute}`;
+}
+function defaultStart() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(9, 0, 0, 0);
+  return d.toISOString();
 }
 
-function emailPanel() {
-  const hasEmail = emailCount > 0;
-  return `
-    ${accountFilters()}
-    ${!hasEmail ? `<div class="no-data large">No email needs attention.</div>` : ''}
-    ${emailCards('Urgent', 'urgent', sections.urgent, 'urgent')}
-    ${categorySection('Business', sections.business)}
-    ${categorySection('Personal', sections.personal)}
-    ${categorySection('Financial', sections.financial)}
-    ${categorySection('Waiting / FYI', sections.waiting)}`;
-}
-
-function tasksPanel() {
-  const todos = sections.todos || [];
-  if (!todos.length) {
-    return `<div class="no-data large">No open tasks. Nice work.</div>`;
-  }
-  return `
-    <section class="section">
-      ${sectionHeader('To-do List', 'todo')}
-      <div class="todo-list full">${todos.map(item => todoItem(item)).join('')}</div>
-    </section>`;
-}
-
-function calendarPanel() {
-  const week = sections.weekSchedule || [];
-  return `
-    ${scheduleSection(sections.tomorrowSchedule)}
-    ${weekScheduleSection(week)}`;
-}
-
-function suggestionsPanel() {
-  const hasAny = (sections.calendarProposals?.length || 0) + (sections.suggestedReplies?.length || 0) > 0;
-  if (!hasAny) {
-    return `<div class="no-data large">No suggestions today.</div>`;
-  }
-  return `
-    ${calendarProposalSection(sections.calendarProposals)}
-    ${replySection(sections.suggestedReplies)}`;
-}
-
-function fyiPanel() {
-  return `
-    ${summaryBlock('Newsletter / Info', sections.newsletter)}
-    ${summaryBlock('Spam / Junk', sections.spam)}
-    ${accountTotals()}`;
-}
-
-function imessagesPanel() {
-  const items = sections.imessage || [];
-  const isSystemOnly = items.length === 1 && items[0]?.chat === 'system';
-
-  if (!items.length || isSystemOnly) {
-    const note = items[0]?.summary || 'No iMessage data available for this run.';
-    return `<div class="no-data large">${esc(note)}</div>`;
-  }
-
-  const needsReply = items.filter(m => m.needsReply && m.chat !== 'system');
-  const fyi = items.filter(m => !m.needsReply && m.chat !== 'system');
-
-  return `
-    ${needsReply.length ? `
-    <section class="section">
-      ${sectionHeader('Needs Reply', 'reply')}
-      <div class="imsg-list">${needsReply.map(imsgCard).join('')}</div>
-    </section>` : ''}
-    ${fyi.length ? `
-    <section class="section">
-      ${sectionHeader('FYI', 'neutral')}
-      <div class="imsg-list">${fyi.map(imsgCard).join('')}</div>
-    </section>` : ''}`;
-}
-
-function imsgCard(item) {
-  const priorityClass = item.priority === 'high' ? 'high' : item.priority === 'low' ? 'low' : 'medium';
-  const dateStr = item.date ? formatDateTime(item.date) : '';
-  return `<div class="imsg-card${item.needsReply ? ' needs-reply' : ''}">
-    <div class="imsg-header">
-      <span class="imsg-sender">${esc(item.sender || item.handle || 'Unknown')}</span>
-      ${item.needsReply ? `<span class="imsg-tag reply">Needs Reply</span>` : ''}
-      ${item.priority === 'high' ? `<span class="imsg-tag urgent">Urgent</span>` : ''}
-      ${dateStr ? `<span class="imsg-date">${esc(dateStr)}</span>` : ''}
-    </div>
-    <div class="imsg-summary">${esc(item.summary || '')}</div>
-  </div>`;
-}
-
-// ── section renderers ────────────────────────────────────────────────────────
-
-function statsRow() {
-  const s = briefing.stats || {};
-  return `<section class="stats-row">
-    ${stat('Urgent', s.urgent, 'red')}
-    ${stat('Events Tomorrow', s.eventsTomorrow, 'green')}
-    ${stat('Replies', s.suggestedReplies, 'blue')}
-    ${stat('To-dos', s.todos, 'gold')}
-  </section>`;
-}
-
-function stat(label, value, tone) {
-  return `<div class="stat ${tone}"><div class="stat-num">${num(value)}</div><span>${esc(label)}</span></div>`;
-}
-
-function staleWarning() {
-  return `<div class="stale">This briefing may be stale. Expected ${esc(todayISO)}, but the page was built for ${esc(briefing.metadata.date)}. Last successful build: ${esc(formatDateTime(briefing.metadata.lastSuccessfulBuildAt))}.</div>`;
-}
-
-function accountFilters() {
-  const accounts = briefing.accounts || [];
-  if (!accounts.length) return '';
-  return `<nav class="filters" aria-label="Filter by account">
-    <button class="filter active" data-filter="all" onclick="filterAccount('all',this)">All</button>
-    ${accounts.map(a => `<button class="filter" data-filter="${attr(a.email)}" onclick="filterAccount('${jsStr(a.email)}',this)">${esc(a.label || a.email)}</button>`).join('')}
-  </nav>`;
-}
-
-function emailCards(title, marker, items = [], className = '') {
-  if (!items?.length) return '';
-  return `<section class="section">
-    ${sectionHeader(title, marker)}
-    <div class="card-grid">
-      ${items.map(item => `<article class="email-card ${attr(className)}" data-account="${attr(accountOf(item))}">
-        ${accountChip(item)}
-        <div class="email-from">${esc(item.senderName || item.sender || item.from || 'Unknown sender')}</div>
-        <div class="email-subject">${esc(item.subject || item.title || '(no subject)')}</div>
-        <div class="email-summary">${esc(item.summary || item.snippet || item.detail || '')}</div>
-        <div class="email-meta">
-          ${item.deadline ? `<span class="email-tag deadline">${esc(item.deadline)}</span>` : ''}
-          ${gmailThreadLink(item, 'View Thread &rarr;', 'email-tag link-tag')}
-        </div>
-      </article>`).join('')}
-    </div>
-  </section>`;
-}
-
-function emailCardCompact(item, className = '') {
-  return `<article class="email-card ${attr(className)}" data-account="${attr(accountOf(item))}">
-    ${accountChip(item)}
-    <div class="email-from">${esc(item.senderName || item.sender || item.from || 'Unknown sender')}</div>
-    <div class="email-subject">${esc(item.subject || item.title || '(no subject)')}</div>
-    <div class="email-summary">${esc((item.summary || item.snippet || item.detail || '').slice(0, 120))}</div>
-    <div class="email-meta">
-      ${gmailThreadLink(item, 'View Thread &rarr;', 'email-tag link-tag')}
-    </div>
-  </article>`;
-}
-
-function categorySection(title, items = []) {
-  if (!items?.length) return '';
-  return `<section class="section">
-    ${sectionHeader(title, 'neutral')}
-    <div class="category-list">${items.map(item => `<div class="category-item" data-account="${attr(accountOf(item))}">
-      <div class="category-sender">${esc(item.senderName || item.sender || item.from || 'Unknown')}</div>
-      <div class="category-arrow">&rarr;</div>
-      <div class="category-body">
-        <div class="category-detail"><strong>${esc(item.subject || item.title || '(no subject)')}</strong>${item.summary || item.snippet ? ` &mdash; ${esc((item.summary || item.snippet || '').slice(0, 140))}` : ''}</div>
-        <div class="category-footer">
-          ${gmailThreadLink(item, 'View Thread', 'category-link')}
-          <span class="category-acc">${esc(accountLabel(accountOf(item)))}</span>
-        </div>
-      </div>
-    </div>`).join('')}</div>
-  </section>`;
-}
-
-function scheduleSection(events = []) {
-  const sorted = [...(events || [])].sort((a, b) => String(a.start || '').localeCompare(String(b.start || '')));
-  return `<section class="section">
-    ${sectionHeader("Tomorrow's Schedule", 'calendar')}
-    <div id="tomorrow-schedule">
-      ${sorted.length
-        ? sorted.map(scheduleEvent).join('')
-        : `<div class="no-data">No events scheduled for tomorrow.</div>`}
-    </div>
-  </section>`;
-}
-
-function weekScheduleSection(events = []) {
-  const evts = events || [];
-  const header = sectionHeader('This Week', 'calendar');
-
-  if (!evts.length) {
-    return `<section class="section">
-      ${header}
-      <div class="no-data">Week schedule not available. The daily gather scans tomorrow only; a 7-day calendar scan would populate this section.</div>
-    </section>`;
-  }
-
-  const byDate = {};
-  for (const ev of evts) {
-    const key = (ev.start || 'unknown').slice(0, 10);
-    if (!byDate[key]) byDate[key] = [];
-    byDate[key].push(ev);
-  }
-
-  const days = Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b));
-  return `<section class="section">
-    ${header}
-    ${days.map(([date, dayEvents]) => `
-      <div class="week-day">
-        <div class="week-day-label">${esc(formatWeekdayLabel(date))}</div>
-        <div class="week-day-events">${dayEvents.map(scheduleEvent).join('')}</div>
-      </div>`).join('')}
-  </section>`;
-}
-
-function scheduleEvent(ev) {
-  const color = ev.color || calendarColor(ev.calendarName || ev.calendarId);
-  const link = ev.htmlLink || calendarEventLink(ev);
-  return `<div class="schedule-event">
-    <div class="schedule-time">${esc(timeRange(ev.start, ev.end, ev.allDay))}</div>
-    <div class="schedule-info">
-      <div class="schedule-title">${esc(ev.title || ev.summary || '(no title)')}</div>
-      <div class="schedule-calendar" style="color:${attr(color)}">&#9679; ${esc(ev.calendarName || 'Calendar')}</div>
-      ${ev.location ? `<div class="schedule-location">${esc(ev.location)}</div>` : ''}
-    </div>
-    ${link ? `<a href="${attr(link)}" target="_blank" rel="noopener noreferrer" class="schedule-link">Open &rarr;</a>` : ''}
-  </div>`;
-}
-
-function scheduleEventCompact(ev) {
-  const color = ev.color || calendarColor(ev.calendarName || ev.calendarId);
-  return `<div class="schedule-event compact">
-    <div class="schedule-time">${esc(timeRange(ev.start, ev.end, ev.allDay))}</div>
-    <div class="schedule-info">
-      <div class="schedule-title">${esc(ev.title || ev.summary || '(no title)')}</div>
-      <div class="schedule-calendar" style="color:${attr(color)}">&#9679; ${esc(ev.calendarName || 'Calendar')}</div>
-    </div>
-  </div>`;
-}
-
-function calendarProposalSection(items = []) {
-  if (!items?.length) return '';
-  return `<section class="section">
-    ${sectionHeader('Calendar Event Proposals', 'calendar')}
-    <div class="action-list">${items.map((item, idx) => calendarProposal(item, idx)).join('')}</div>
-  </section>`;
-}
-
-function calendarProposal(item, idx) {
-  const id = item.id || `event-${idx + 1}`;
-  const selectedCal = item.calendarId || calendars[0]?.id || 'primary';
-  return `<div class="action-card calendar" data-account="${attr(accountOf(item))}" id="${attr(id)}"
-    data-event-title="${attr(item.title || 'New event')}"
-    data-event-start="${attr(item.start || '')}"
-    data-event-end="${attr(item.end || item.start || '')}"
-    data-event-calendar="${attr(calendarName(selectedCal))}"
-    data-event-location="${attr(item.location || '')}">
-    ${accountChip(item)}
-    <div class="action-type cal">Calendar Event</div>
-    <div class="action-title">${esc(item.title || 'New event')}</div>
-    <div class="action-detail">${esc(item.detail || dateRange(item.start, item.end))}</div>
-    ${item.context ? `<div class="action-detail">${esc(item.context)}</div>` : ''}
-    ${sourceLine(item)}
-    <div class="action-buttons">
-      <select class="calendar-select" onchange="updateCalLink('${jsStr(id)}',this.value,this)" data-calendars>
-        ${calendars.map(cal => `<option value="${attr(cal.id)}" data-cal-name="${attr(cal.name)}"${cal.id === selectedCal ? ' selected' : ''}>${esc(cal.name)}</option>`).join('')}
-      </select>
-      <a href="${attr(calendarCreateLink(item, selectedCal))}" target="_blank" rel="noopener noreferrer" class="action-btn primary" id="cal-link-${attr(id)}" onclick="addToSchedule(this)">Add to Calendar</a>
-      <button class="action-btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
-    </div>
-  </div>`;
-}
-
-function replySection(items = []) {
-  if (!items?.length) return '';
-  return `<section class="section">
-    ${sectionHeader('Suggested Replies', 'reply')}
-    <div class="action-list">${items.map(item => `<div class="action-card reply" data-account="${attr(accountOf(item))}">
-      ${accountChip(item)}
-      <div class="action-type rep">Suggested Reply</div>
-      <div class="action-title">${esc(item.title || item.subject || 'Suggested reply')}</div>
-      <div class="action-detail">${esc(item.detail || item.reason || '')}</div>
-      ${sourceLine(item)}
-      ${item.body || item.replyBody ? `<div class="reply-preview">${esc(item.body || item.replyBody)}</div>` : ''}
-      <div class="action-buttons">
-        <a href="${attr(replyLink(item))}" target="_blank" rel="noopener noreferrer" class="action-btn primary">Reply in Gmail</a>
-        ${gmailThreadLink(item, 'View Thread', 'action-btn')}
-        <button class="action-btn" onclick="this.closest('.action-card').style.display='none'">Skip</button>
-      </div>
-    </div>`).join('')}</div>
-  </section>`;
-}
-
-function todoItem(item) {
-  const tid = makeTodoId(item);
-  return `<div class="todo-item" data-account="${attr(accountOf(item))}" data-todo-id="${attr(tid)}" onclick="toggleTodo(this)">
-    <div class="todo-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
-    <div class="todo-body">
-      <div class="todo-priority ${attr(item.priority || 'medium')}">${esc(item.priority || 'Medium')}</div>
-      <div class="todo-text">${esc(item.text || item.title || item.summary || '')}</div>
-      <div class="todo-account">${esc(accountLabel(accountOf(item)))}</div>
-    </div>
-  </div>`;
-}
-
-function summaryBlock(title, items = []) {
-  if (!items?.length) return '';
-  return `<section class="section">
-    ${sectionHeader(title, 'neutral')}
-    <div class="summary-block">
-      ${items.map(item => `<div class="summary-row" data-account="${attr(accountOf(item))}">
-        <span class="summary-sender">${esc(item.senderName || item.sender || item.from || item.title || 'Item')}</span>
-        <span class="summary-text">${esc(item.summary || item.subject || item.detail || '')}</span>
-      </div>`).join('')}
-    </div>
-  </section>`;
-}
-
-function accountTotals() {
-  const totals = buildAccountTotals();
-  if (!totals.length) return '';
-  return `<section class="section">
-    ${sectionHeader('Stats by Account', 'neutral')}
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Account</th><th>Total</th><th>Urgent</th><th>Replies</th><th>To-dos</th></tr></thead>
-        <tbody>${totals.map(row => `<tr><td>${esc(row.account)}</td><td>${num(row.total)}</td><td>${num(row.urgent)}</td><td>${num(row.replies)}</td><td>${num(row.todos)}</td></tr>`).join('')}</tbody>
-      </table>
-    </div>
-  </section>`;
-}
-
-// ── shared helpers ───────────────────────────────────────────────────────────
-
-function sectionHeader(title, marker) {
-  return `<div class="section-header"><div class="section-marker ${attr(marker)}"></div><h2 class="section-title">${esc(title)}</h2></div>`;
-}
-
-function accountChip(item) {
-  const account = accountOf(item);
-  return account ? `<span class="account-chip">${esc(accountLabel(account))}</span>` : '';
-}
-
-function sourceLine(item) {
-  const sender = item.sourceSender || item.sender || item.from;
-  const subject = item.sourceSubject || item.subject;
-  if (!sender && !subject) return '';
-  return `<div class="action-source">From: ${esc(sender || 'Unknown')} &rarr; ${esc(subject || '(no subject)')}</div>`;
-}
-
-function gmailThreadLink(item, label, className) {
-  let account, threadId;
-
-  if (item.viewThreadAccount && item.viewThreadId) {
-    account = item.viewThreadAccount;
-    threadId = item.viewThreadId;
-  } else {
-    account = item.sourceAccount || item.account || item.originalRecipient || '';
-    if (Array.isArray(item.gmailLinks) && item.gmailLinks.length) {
-      const match = item.gmailLinks.find(l => l.sourceAccount === account) || item.gmailLinks[0];
-      if (match) threadId = match.gmailThreadId;
-    }
-    if (!threadId) threadId = item.gmailThreadId || item.threadId;
-  }
-
-  if (!threadId) return '';
-
-  const authuser = account ? `?authuser=${encodeURIComponent(account)}` : '';
-  const url = `https://mail.google.com/mail/${authuser}#all/${threadId}`;
-  return `<a href="${attr(url)}" target="ben-gmail-thread" rel="noopener noreferrer" class="${attr(className)}">${label}</a>`;
-}
-
-function replyLink(item) {
-  const to = item.to || item.replyTo || item.senderEmail || extractEmail(item.sender || item.from) || '';
-  const subject = item.replySubject || item.subject || '';
-  const body = item.body || item.replyBody || '';
-  const url = new URL('https://mail.google.com/mail/');
-  url.searchParams.set('view', 'cm');
-  url.searchParams.set('fs', '1');
-  url.searchParams.set('to', to);
-  url.searchParams.set('su', subject);
-  url.searchParams.set('body', body);
-  return url.toString();
-}
-
-function calendarCreateLink(item, calendarId) {
-  const url = new URL('https://calendar.google.com/calendar/render');
-  url.searchParams.set('action', 'TEMPLATE');
-  url.searchParams.set('text', item.title || 'New event');
-  url.searchParams.set('dates', `${compactDateTime(item.start)}/${compactDateTime(item.end || item.start)}`);
-  url.searchParams.set('details', item.details || item.context || item.source || '');
-  url.searchParams.set('location', item.location || '');
-  url.searchParams.set('src', calendarId || 'primary');
-  return url.toString();
-}
-
-function calendarEventLink(ev) {
-  if (!ev.title || !ev.start) return '';
-  return calendarCreateLink(ev, ev.calendarId || 'primary');
-}
-
-function makeTodoId(item) {
-  const raw = [item.id || '', item.conversationKey || '', item.text || item.title || item.summary || '', accountOf(item)].join('\x00');
-  let h = 5381;
-  for (let i = 0; i < raw.length; i++) h = ((h << 5) + h + raw.charCodeAt(i)) | 0;
-  return 'todo_' + (h >>> 0).toString(36);
-}
-
-function buildAccountTotals() {
-  const accounts = briefing.accounts || [];
-  return accounts.map(a => {
-    const email = a.email;
-    const countIn = list => (list || []).filter(i => accountOf(i) === email).length;
-    return {
-      account: a.label || email,
-      total: ['urgent', 'business', 'personal', 'financial', 'waiting', 'newsletter', 'spam'].reduce((n, key) => n + countIn(sections[key]), 0),
-      urgent: countIn(sections.urgent),
-      replies: countIn(sections.suggestedReplies),
-      todos: countIn(sections.todos)
-    };
-  });
-}
-
-function actionCount() {
-  return num(briefing.stats.urgent) + num(briefing.stats.proposedEvents) + num(briefing.stats.suggestedReplies) + num(briefing.stats.todos);
-}
-
-function summaryLine() {
-  const stats = briefing.stats || {};
-  const urgent = num(stats.urgent);
-  const replies = num(stats.suggestedReplies);
-  const todos = num(stats.todos);
-  const events = num(stats.eventsTomorrow);
-  if (urgent) return `${urgent} urgent item${urgent === 1 ? '' : 's'}, ${events} event${events === 1 ? '' : 's'} tomorrow, and ${todos + replies} suggested action${todos + replies === 1 ? '' : 's'}.`;
-  return `${events} event${events === 1 ? '' : 's'} tomorrow and ${todos + replies} suggested action${todos + replies === 1 ? '' : 's'}.`;
-}
-
-// ── CSS ──────────────────────────────────────────────────────────────────────
-
+// ── styles ───────────────────────────────────────────────────────────────────
 function css() {
   return `
 :root {
-  --bg: #FAFAF5;
-  --surface: #FFFFFF;
-  --border: #E5E2D6;
-  --text: #1C1B19;
-  --muted: #8A8780;
-  --accent: #A8843A;
-  --urgent: #B83A3A;
-  --calendar: #3A7556;
-  --reply: #3D5DAA;
-  --shadow: 0 2px 12px rgba(28,27,25,.06);
-  --topbar-h: 56px;
-  --nav-h: 44px;
+  --paper:#FAF7F1; --card:#FFFFFF; --ink:#22301F; --muted:#6B7466; --line:#E5E0D4;
+  --hs:#3A7556; --hs-soft:#E7F0EA; --bda:#A8843A; --bda-soft:#F5EEDD;
+  --pers:#3D5DAA; --pers-soft:#E8EDF8; --urgent:#B4543A; --urgent-soft:#F8E9E3;
 }
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 15px;
-  line-height: 1.5;
-}
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:var(--paper); color:var(--ink); font-family:Inter,system-ui,sans-serif; font-size:15px; line-height:1.55; }
+main { max-width:760px; margin:0 auto; padding:28px 20px 40px; }
+a { color:var(--hs); }
 
-/* ── topbar ─────────────────────────────── */
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  height: var(--topbar-h);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 24px;
-  background: rgba(250,250,245,.94);
-  border-bottom: 1px solid var(--border);
-  backdrop-filter: blur(14px);
-}
-.kicker {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 10px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  margin-bottom: 1px;
-}
-.top-title {
-  font-family: "Instrument Serif", Georgia, serif;
-  font-size: 20px;
-  line-height: 1;
-}
-.topbar-meta { display: flex; gap: 8px; }
-.meta-pill {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 5px 10px;
-  background: var(--surface);
-  color: var(--muted);
-}
+.kicker { font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-bottom:10px; }
+.hero h1 { font-family:'Instrument Serif',Georgia,serif; font-size:clamp(28px,5vw,40px); line-height:1.15; font-weight:400; margin-bottom:14px; }
+.story p { font-family:'Instrument Serif',Georgia,serif; font-size:19px; line-height:1.5; color:#33402F; margin-bottom:10px; }
+.stale { background:var(--urgent-soft); color:var(--urgent); border:1px solid #E4C0B2; border-radius:10px; padding:10px 14px; margin-bottom:18px; font-weight:500; }
 
-/* ── workspace nav ──────────────────────── */
-.workspace-nav {
-  position: sticky;
-  top: var(--topbar-h);
-  z-index: 19;
-  display: flex;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding: 0 16px;
-}
-.workspace-nav::-webkit-scrollbar { display: none; }
-.tab-btn {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 16px;
-  height: var(--nav-h);
-  border: none;
-  background: none;
-  color: var(--muted);
-  font: 600 13px Inter, sans-serif;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  white-space: nowrap;
-  transition: color .15s, border-color .15s;
-}
-.tab-btn:hover { color: var(--text); }
-.tab-btn.active { color: var(--text); border-bottom-color: var(--text); }
-.tab-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 800;
-}
-.tab-btn.active .tab-badge { background: var(--text); }
+.legend { display:flex; flex-wrap:wrap; gap:8px; margin:22px 0 6px; }
+.chip { display:inline-block; font-size:11.5px; font-weight:600; letter-spacing:.02em; padding:3px 10px; border-radius:999px; border:1px solid transparent; }
+.acct-hs { background:var(--hs-soft); color:var(--hs); }
+.acct-bda { background:var(--bda-soft); color:#7A5E22; }
+.acct-personal { background:var(--pers-soft); color:var(--pers); }
+.acct-other,.acct-all { background:#EEECE4; color:var(--muted); }
+button.filter-chip { cursor:pointer; font-family:inherit; font-size:12px; }
+button.filter-chip.active { outline:2px solid var(--ink); outline-offset:1px; }
 
-/* ── main / panels ──────────────────────── */
-main {
-  width: min(1100px, calc(100% - 32px));
-  margin: 0 auto;
-  padding-bottom: 60px;
-}
-.tab-panel { display: none; padding-top: 28px; }
-.tab-panel.active { display: block; }
-.stale {
-  margin-bottom: 20px;
-  padding: 12px 14px;
-  border: 1px solid rgba(184,58,58,.3);
-  background: rgba(184,58,58,.07);
-  color: var(--urgent);
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 13px;
-}
+.block { margin-top:34px; }
+.block-title { font-family:'Instrument Serif',Georgia,serif; font-size:24px; font-weight:400; border-bottom:1px solid var(--line); padding-bottom:6px; margin-bottom:16px; }
+.sub-title { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:18px 0 8px; }
 
-/* ── today tab ──────────────────────────── */
-.today-hero {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 24px;
-  align-items: end;
-  padding-bottom: 24px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 24px;
-}
-h1 {
-  font-family: "Instrument Serif", Georgia, serif;
-  font-weight: 400;
-  font-size: clamp(36px, 5vw, 60px);
-  line-height: 1;
-  margin-bottom: 8px;
-}
-.hero-summary { color: var(--muted); max-width: 560px; }
-.build-meta {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  display: grid;
-  gap: 3px;
-  text-align: right;
-}
-.build-meta strong {
-  color: var(--text);
-  font-family: Inter, sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  text-transform: none;
-  letter-spacing: 0;
-}
-.stats-row {
-  display: grid;
-  grid-template-columns: repeat(4,1fr);
-  gap: 10px;
-  margin-bottom: 28px;
-}
-.stat {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-  box-shadow: var(--shadow);
-}
-.stat-num { font-size: 28px; font-weight: 700; margin-bottom: 2px; }
-.stat span { color: var(--muted); font-size: 12px; }
-.stat.red .stat-num { color: var(--urgent); }
-.stat.green .stat-num { color: var(--calendar); }
-.stat.blue .stat-num { color: var(--reply); }
-.stat.gold .stat-num { color: var(--accent); }
-.today-block { margin-bottom: 28px; }
-.today-two-col {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  margin-top: 8px;
-}
-.today-col {}
-.see-more-btn {
-  margin-top: 10px;
-  font: 600 12px Inter, sans-serif;
-  color: var(--reply);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-}
-.see-more-btn:hover { text-decoration: underline; }
-.no-data {
-  color: var(--muted);
-  font-size: 14px;
-  padding: 14px 0;
-}
-.no-data.large {
-  text-align: center;
-  padding: 60px 0;
-  font-size: 16px;
-}
+.arc { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px 20px; margin-bottom:14px; box-shadow:0 1px 2px rgba(34,48,31,.04); }
+.arc-chips { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+.arc-title { font-family:'Instrument Serif',Georgia,serif; font-size:21px; font-weight:400; }
+.stakes { font-style:italic; color:var(--muted); font-size:13.5px; margin-top:2px; }
+.trend { font-size:11.5px; font-weight:600; padding:3px 9px; border-radius:999px; }
+.trend-rising { background:var(--hs-soft); color:var(--hs); }
+.trend-steady { background:#EEECE4; color:var(--muted); }
+.trend-waiting { background:var(--pers-soft); color:var(--pers); }
+.trend-stalling { background:var(--urgent-soft); color:var(--urgent); }
+.trend-closing { background:#E9F1E4; color:#4C7A3D; }
+.trend-new { background:var(--bda-soft); color:#7A5E22; }
 
-/* ── sections ───────────────────────────── */
-.section { margin: 32px 0; }
-.section-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-.section-marker {
-  width: 8px;
-  height: 22px;
-  border-radius: 999px;
-  background: var(--accent);
-  flex-shrink: 0;
-}
-.section-marker.urgent { background: var(--urgent); }
-.section-marker.calendar { background: var(--calendar); }
-.section-marker.reply { background: var(--reply); }
-.section-marker.todo { background: var(--accent); }
-.section-marker.neutral { background: var(--border); }
-h2.section-title {
-  font-family: "Instrument Serif", Georgia, serif;
-  font-size: 26px;
-  font-weight: 400;
-}
+.arc-body { margin-top:12px; display:grid; gap:8px; }
+.beat { display:grid; grid-template-columns:118px 1fr; gap:10px; }
+.beat-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); padding-top:2px; }
+.beat-text { font-size:14.5px; }
+@media (max-width:560px){ .beat{ grid-template-columns:1fr; gap:2px; } }
 
-/* ── account filters ────────────────────── */
-.filters {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-bottom: 20px;
-}
-.filter {
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--muted);
-  padding: 6px 14px;
-  border-radius: 999px;
-  cursor: pointer;
-  font: 500 13px Inter, sans-serif;
-  transition: all .15s;
-}
-.filter:hover { color: var(--text); border-color: var(--text); }
-.filter.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+.needs { margin-top:12px; background:#FBF4E6; border-left:3px solid var(--bda); border-radius:0 10px 10px 0; padding:10px 14px; font-size:14.5px; }
+.needs-label { display:block; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#7A5E22; margin-bottom:2px; }
 
-/* ── card grid ──────────────────────────── */
-.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
-.card-grid.compact { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-.email-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-  box-shadow: var(--shadow);
-}
-.email-card.urgent { border-color: rgba(184,58,58,.3); }
-.account-chip {
-  display: inline-flex;
-  margin-bottom: 10px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgba(168,132,58,.12);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 700;
-}
-.email-from { font-weight: 700; font-size: 14px; }
-.email-subject { margin-top: 3px; font-size: 16px; font-weight: 700; line-height: 1.3; }
-.email-summary { margin-top: 6px; color: #4C4943; font-size: 13px; line-height: 1.5; }
-.email-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-.email-tag, .action-btn, .category-link, .schedule-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  padding: 5px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  text-decoration: none;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background .15s;
-}
-.email-tag:hover, .action-btn:hover, .category-link:hover { background: var(--bg); }
-.email-tag.deadline { color: var(--urgent); border-color: rgba(184,58,58,.3); }
-.link-tag { color: var(--reply); }
-.action-btn.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
-.action-btn.primary:hover { background: #333; }
+.actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.btn { display:inline-block; font-size:13px; font-weight:600; padding:7px 14px; border-radius:9px; text-decoration:none; border:1px solid var(--line); }
+.btn-primary { background:var(--hs); border-color:var(--hs); color:#fff; }
+.btn-cal { background:var(--pers-soft); border-color:#C9D4EC; color:var(--pers); }
+.btn-quiet { background:transparent; color:var(--ink); }
+.btn-mini { font-size:11.5px; padding:3px 9px; background:transparent; color:var(--muted); }
+.option { font-size:13px; padding:7px 12px; border:1px dashed var(--line); border-radius:9px; color:var(--muted); }
 
-/* ── category list ──────────────────────── */
-.category-list { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); }
-.category-item {
-  display: grid;
-  grid-template-columns: 160px 20px 1fr;
-  gap: 10px;
-  padding: 12px 14px;
-  background: var(--surface);
-  align-items: start;
-}
-.category-sender { font-weight: 700; font-size: 13px; }
-.category-arrow { color: var(--muted); }
-.category-body {}
-.category-detail { font-size: 13px; line-height: 1.4; }
-.category-footer { display: flex; gap: 10px; align-items: center; margin-top: 6px; }
-.category-acc {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 10px;
-  color: var(--muted);
-}
-.category-link { font-size: 11px; min-height: 24px; padding: 3px 8px; }
+.decision-list { list-style:none; counter-reset:d; }
+.decision { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 18px 16px 52px; margin-bottom:12px; position:relative; counter-increment:d; }
+.decision::before { content:counter(d); position:absolute; left:16px; top:16px; width:24px; height:24px; border-radius:50%; background:var(--ink); color:var(--paper); font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+.decision-q { font-weight:600; font-size:15.5px; }
+.decision-ctx { color:var(--muted); font-size:13.5px; margin-top:4px; }
+.decision-lean { font-style:italic; font-size:13.5px; margin-top:6px; color:#33402F; }
 
-/* ── schedule ───────────────────────────── */
-.schedule-event {
-  display: grid;
-  grid-template-columns: 160px 1fr auto;
-  gap: 14px;
-  align-items: center;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--border);
-}
-.schedule-event:last-child { border-bottom: 0; }
-.schedule-event.compact { grid-template-columns: 140px 1fr; padding: 10px 0; }
-.schedule-time { font-weight: 700; font-size: 13px; color: #4C4943; }
-.schedule-title { font-weight: 700; font-size: 14px; }
-.schedule-calendar { margin-top: 3px; font-size: 12px; }
-.schedule-location { margin-top: 2px; font-size: 12px; color: var(--muted); }
-.week-day { margin-bottom: 24px; }
-.week-day-label {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  color: var(--muted);
-  margin-bottom: 4px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border);
-}
+.timeline { display:grid; gap:6px; }
+.event { display:flex; align-items:baseline; gap:10px; padding:8px 10px; background:var(--card); border:1px solid var(--line); border-radius:10px; }
+.event-time { font-variant-numeric:tabular-nums; font-weight:600; font-size:13px; min-width:64px; color:var(--muted); }
+.event-dot { width:9px; height:9px; border-radius:50%; background:var(--dot,#3A7556); flex:none; align-self:center; }
+.event-body { flex:1; font-size:14px; }
+.event-cal { display:block; font-size:11.5px; color:var(--muted); }
+.empty { color:var(--muted); font-style:italic; padding:6px 2px; }
+.week summary { cursor:pointer; color:var(--muted); font-size:13.5px; margin:10px 0; }
 
-/* ── action cards ───────────────────────── */
-.action-list { display: grid; gap: 12px; }
-.action-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-  box-shadow: var(--shadow);
-}
-.action-type { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); margin-bottom: 6px; }
-.action-type.cal { color: var(--calendar); }
-.action-type.rep { color: var(--reply); }
-.action-title { font-size: 17px; font-weight: 700; line-height: 1.3; }
-.action-detail { margin-top: 6px; color: #4C4943; font-size: 13px; line-height: 1.45; }
-.action-source {
-  margin-top: 8px;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 10px;
-  color: var(--muted);
-}
-.reply-preview {
-  margin-top: 10px;
-  padding: 10px 12px;
-  background: var(--bg);
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  font-size: 13px;
-  line-height: 1.5;
-  color: #4C4943;
-  white-space: pre-line;
-}
-.action-buttons { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
-.calendar-select {
-  height: 30px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  padding: 0 8px;
-  font: inherit;
-  font-size: 12px;
-}
+.proposal { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px; }
+.proposal-head { display:flex; gap:8px; align-items:center; }
+.proposal-ctx { color:var(--muted); font-size:13.5px; margin-top:4px; }
+.proposal-controls { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; align-items:center; }
+.proposal-controls input { font-family:inherit; font-size:13px; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--paper); color:var(--ink); }
+.proposal.added { border-color:var(--hs); background:var(--hs-soft); }
 
-/* ── todos ──────────────────────────────── */
-.todo-list { display: grid; gap: 6px; }
-.todo-list.full {}
-.todo-item {
-  display: grid;
-  grid-template-columns: 24px 1fr;
-  gap: 12px;
-  padding: 12px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-  box-shadow: var(--shadow);
-  transition: opacity .2s;
-}
-.todo-check {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 2px solid var(--border);
-  display: grid;
-  place-items: center;
-  background: var(--surface);
-  margin-top: 2px;
-  flex-shrink: 0;
-  transition: all .15s;
-}
-.todo-check svg { opacity: 0; transition: opacity .15s; }
-.todo-item.checked .todo-check { background: var(--calendar); border-color: var(--calendar); }
-.todo-item.checked .todo-check svg { opacity: 1; }
-.todo-item.checked .todo-text { text-decoration: line-through; color: var(--muted); }
-.todo-priority {
-  display: inline-flex;
-  padding: 2px 7px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  color: var(--accent);
-  background: rgba(168,132,58,.12);
-  margin-bottom: 4px;
-}
-.todo-priority.high { color: var(--urgent); background: rgba(184,58,58,.1); }
-.todo-priority.low { color: var(--calendar); background: rgba(58,117,86,.1); }
-.todo-text { font-size: 14px; line-height: 1.4; }
-.todo-account { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--muted); margin-top: 3px; }
+.hits { list-style:none; display:grid; gap:8px; }
+.hits li { padding:8px 12px; background:var(--card); border:1px solid var(--line); border-radius:10px; font-size:14px; }
+.hit-link { font-size:12px; color:var(--pers); }
 
-/* ── fyi ────────────────────────────────── */
-.summary-block {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: var(--shadow);
-}
-.summary-row {
-  display: grid;
-  grid-template-columns: 180px 1fr;
-  gap: 12px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-}
-.summary-row:last-child { border-bottom: 0; }
-.summary-sender { color: var(--muted); font-size: 12px; }
-.summary-text { color: var(--text); }
-.table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); }
-table { width: 100%; border-collapse: collapse; }
-th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
-tr:last-child td { border-bottom: 0; }
-th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+.noise { margin-top:26px; color:var(--muted); font-size:13.5px; font-style:italic; border-top:1px dashed var(--line); padding-top:14px; }
 
-/* ── footer ─────────────────────────────── */
-footer {
-  width: min(1100px, calc(100% - 32px));
-  margin: 0 auto 32px;
-  color: var(--muted);
-  font-size: 12px;
-  border-top: 1px solid var(--border);
-  padding-top: 16px;
-}
+.appendix summary { cursor:pointer; font-size:14px; color:var(--muted); padding:10px 0; }
+.raw-list { list-style:none; display:grid; gap:6px; margin-bottom:6px; }
+.raw-list li { font-size:13.5px; padding:6px 10px; background:var(--card); border:1px solid var(--line); border-radius:8px; }
+.tag-reply { font-size:10.5px; font-weight:700; color:var(--urgent); text-transform:uppercase; }
 
-/* ── imessage ───────────────────────────── */
-.imsg-list { display: grid; gap: 8px; }
-.imsg-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 14px 16px;
-  box-shadow: var(--shadow);
-}
-.imsg-card.needs-reply { border-color: rgba(61,93,170,.3); }
-.imsg-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
-.imsg-sender { font-weight: 700; font-size: 14px; }
-.imsg-tag {
-  display: inline-flex;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-.imsg-tag.reply { background: rgba(61,93,170,.12); color: var(--reply); }
-.imsg-tag.urgent { background: rgba(184,58,58,.1); color: var(--urgent); }
-.imsg-date { margin-left: auto; font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--muted); }
-.imsg-summary { font-size: 13px; color: #4C4943; line-height: 1.45; }
-
-/* ── utility ────────────────────────────── */
-.hidden-by-filter { display: none !important; }
-
-/* ── mobile ─────────────────────────────── */
-@media (max-width: 700px) {
-  .today-hero { grid-template-columns: 1fr; }
-  .build-meta { text-align: left; }
-  .stats-row { grid-template-columns: repeat(2, 1fr); }
-  .today-two-col { grid-template-columns: 1fr; }
-  .card-grid { grid-template-columns: 1fr; }
-  .category-item { grid-template-columns: 1fr; }
-  .category-arrow { display: none; }
-  .schedule-event { grid-template-columns: 1fr; gap: 6px; }
-  .schedule-event.compact { grid-template-columns: 1fr; }
-  .summary-row { grid-template-columns: 1fr; }
-  .topbar { padding: 0 16px; }
-  .workspace-nav { padding: 0 8px; }
-  .tab-btn { padding: 0 12px; font-size: 12px; }
-  main { width: calc(100% - 24px); }
-}
+footer { max-width:760px; margin:0 auto; padding:18px 20px 40px; color:var(--muted); font-size:12.5px; border-top:1px solid var(--line); display:grid; gap:4px; }
+[data-account].hidden-by-filter { display:none; }
 `;
 }
 
 // ── client JS ────────────────────────────────────────────────────────────────
-
 function clientJs() {
   return `
-function switchTab(tabId, btn) {
-  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
-  if (btn) btn.classList.add('active');
-  document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
-  var panel = document.getElementById('tab-' + tabId);
-  if (panel) panel.classList.add('active');
-}
-
-function filterAccount(account, btn) {
-  var emailTab = document.getElementById('tab-email');
-  if (!emailTab) return;
-  emailTab.querySelectorAll('.filter').forEach(function(b) { b.classList.remove('active'); });
-  if (btn) btn.classList.add('active');
-  emailTab.querySelectorAll('[data-account]').forEach(function(el) {
-    var show = account === 'all' || el.dataset.account === account;
-    el.classList.toggle('hidden-by-filter', !show);
+function filterAccount(btn) {
+  var target = btn.getAttribute('data-account');
+  document.querySelectorAll('.filter-chip').forEach(function (b) { b.classList.toggle('active', b === btn); });
+  document.querySelectorAll('[data-account]').forEach(function (el) {
+    if (el.classList.contains('filter-chip')) return;
+    var a = el.getAttribute('data-account') || '';
+    el.classList.toggle('hidden-by-filter', target !== 'all' && a !== '' && a !== target);
   });
 }
-
-function updateCalLink(eventId, calId, selectEl) {
-  var link = document.getElementById('cal-link-' + eventId);
-  if (link) {
-    var url = new URL(link.href);
-    url.searchParams.set('src', calId);
-    link.href = url.toString();
-  }
-  var card = document.getElementById(eventId);
-  if (card && selectEl) {
-    card.dataset.eventCalendar = selectEl.options[selectEl.selectedIndex].dataset.calName;
-  }
+function updateCalLink(id) {
+  var input = document.getElementById(id + '-start');
+  var link = document.getElementById(id + '-link');
+  if (!input || !link || !input.value) return;
+  var start = new Date(input.value);
+  if (isNaN(start)) return;
+  var end = new Date(start.getTime() + 30 * 60000);
+  function stamp(d) { return d.toISOString().replace(/[-:]/g, '').replace(/\\.\\d{3}Z$/, 'Z'); }
+  var p = new URLSearchParams({ action: 'TEMPLATE', text: link.getAttribute('data-title') || 'New event' });
+  p.set('dates', stamp(start) + '/' + stamp(end));
+  var details = link.getAttribute('data-details'); if (details) p.set('details', details);
+  var loc = link.getAttribute('data-location'); if (loc) p.set('location', loc);
+  link.href = 'https://calendar.google.com/calendar/render?' + p.toString();
 }
-
-function addToSchedule(linkEl) {
-  var card = linkEl.closest('.action-card');
-  if (!card) return;
-  var title = card.dataset.eventTitle;
-  var startISO = card.dataset.eventStart;
-  var endISO = card.dataset.eventEnd;
-  var location = card.dataset.eventLocation || '';
-  var select = card.querySelector('.calendar-select');
-  var calName = select ? select.options[select.selectedIndex].dataset.calName : card.dataset.eventCalendar;
-  var tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  if (!startISO) return;
-  var eventDate = new Date(startISO);
-  if (eventDate.toDateString() !== tomorrow.toDateString()) return;
-  var startTime = eventDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  var endTime = endISO ? new Date(endISO).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : startTime;
-  var newEvent = document.createElement('div');
-  newEvent.className = 'schedule-event';
-  newEvent.innerHTML = '<div class="schedule-time">' + escapeText(startTime + ' – ' + endTime) + '</div>'
-    + '<div class="schedule-info">'
-    + '<div class="schedule-title">' + escapeText(title) + '</div>'
-    + '<div class="schedule-calendar">● ' + escapeText(calName || 'Calendar') + ' (just added)</div>'
-    + (location ? '<div class="schedule-location">' + escapeText(location) + '</div>' : '')
-    + '</div>';
-  var scheduleSection = document.getElementById('tomorrow-schedule');
-  if (!scheduleSection) return;
-  var noData = scheduleSection.querySelector('.no-data');
-  if (noData) noData.remove();
-  var existing = scheduleSection.querySelectorAll('.schedule-event');
-  var inserted = false;
-  for (var i = 0; i < existing.length; i++) {
-    var evTime = existing[i].querySelector('.schedule-time');
-    if (evTime && startTime < evTime.textContent) {
-      scheduleSection.insertBefore(newEvent, existing[i]);
-      inserted = true;
-      break;
-    }
-  }
-  if (!inserted) scheduleSection.appendChild(newEvent);
-  newEvent.style.transition = 'background 0.5s ease';
-  newEvent.style.background = 'rgba(58,117,86,.12)';
-  setTimeout(function() { newEvent.style.background = ''; }, 2000);
-  card.style.opacity = '0.5';
-  var btns = card.querySelector('.action-buttons');
-  if (btns) btns.innerHTML = '<div style="color:var(--calendar);font-size:13px;font-weight:600;">Added to calendar &amp; schedule ✓</div>';
+function addToSchedule(id) {
+  var card = document.getElementById(id + '-link');
+  if (card) { var box = card.closest('.proposal'); if (box) box.classList.add('added'); }
+  return true; // let the <a target="_blank"> proceed to Google Calendar
 }
-
-function escapeText(value) {
-  return String(value || '').replace(/[&<>"']/g, function(c) {
-    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-  });
-}
-
-function toggleTodo(el) {
-  var tid = el.dataset.todoId;
-  if (!tid) return;
-  var checked = !el.classList.contains('checked');
-  document.querySelectorAll('[data-todo-id="' + tid + '"]').forEach(function(item) {
-    item.classList.toggle('checked', checked);
-  });
-  try {
-    var stored = JSON.parse(localStorage.getItem('briefing-todos') || '{}');
-    if (checked) { stored[tid] = true; } else { delete stored[tid]; }
-    localStorage.setItem('briefing-todos', JSON.stringify(stored));
-  } catch(e) {}
-}
-
-(function restoreTodos() {
-  try {
-    var stored = JSON.parse(localStorage.getItem('briefing-todos') || '{}');
-    document.querySelectorAll('.todo-item[data-todo-id]').forEach(function(el) {
-      if (stored[el.dataset.todoId]) el.classList.add('checked');
-    });
-  } catch(e) {}
-})();
 `;
-}
-
-// ── pure helpers ─────────────────────────────────────────────────────────────
-
-function defaultCalendars() {
-  return [{ id: 'primary', name: 'Primary calendar', color: '#3A7556' }];
-}
-
-function accountOf(item) {
-  return item?.account || item?.sourceAccount || item?.originalRecipient || '';
-}
-
-function accountLabel(email) {
-  const found = (briefing.accounts || []).find(a => a.email === email);
-  return found?.label || email;
-}
-
-function calendarName(id) {
-  return calendars.find(c => c.id === id)?.name || calendars[0]?.name || 'Calendar';
-}
-
-function calendarColor(name) {
-  const colors = ['#3A7556', '#3D5DAA', '#A8843A', '#8F4D67', '#5F6F52'];
-  let hash = 0;
-  for (const ch of String(name || 'calendar')) hash = (hash + ch.charCodeAt(0)) % colors.length;
-  return colors[hash];
-}
-
-function timeRange(start, end, allDay) {
-  if (allDay) return 'All day';
-  if (!start) return 'Time TBD';
-  return `${formatTime(start)} – ${formatTime(end || start)}`;
-}
-
-function dateRange(start, end) {
-  if (!start) return 'Date TBD';
-  return `${formatDateTime(start)}${end ? ` – ${formatTime(end)}` : ''}`;
-}
-
-function formatTime(value) {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value || '');
-  return d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true });
-}
-
-function formatDateTime(value) {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value || '');
-  return d.toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
-}
-
-function formatWeekdayLabel(isoDate) {
-  const d = new Date(isoDate + 'T12:00:00');
-  if (Number.isNaN(d.getTime())) return isoDate;
-  return d.toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'long', month: 'long', day: 'numeric' });
-}
-
-function localISODate(date, timeZone) {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timeZone || 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
-  const obj = Object.fromEntries(parts.map(p => [p.type, p.value]));
-  return `${obj.year}-${obj.month}-${obj.day}`;
-}
-
-function compactDateTime(value) {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '';
-  const pad = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-}
-
-function extractEmail(value) {
-  return String(value || '').match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || '';
-}
-
-function esc(value) {
-  return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
-function attr(value) {
-  return esc(value).replace(/`/g, '&#96;');
-}
-
-function jsStr(value) {
-  return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '');
-}
-
-function num(value) {
-  return Number(value || 0);
 }
