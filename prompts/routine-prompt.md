@@ -60,17 +60,23 @@ messages, dedupes across accounts, scans Workspace calendars, and writes
 `briefing.json` + `/tmp/briefing-state-full.json`.
 
 ## STEP 4 — Render, encrypt, deploy
-1. `npm run build` (render + encrypt).
-2. Copy `dist/index.html` to root `index.html`.
-3. Commit `index.html` + `.nojekyll` to `claude/briefing` and push. Never push to `main`.
+1. `npm run build` (render + encrypt). `encrypt-page.mjs` writes the encrypted
+   page directly to the repo-root `index.html`; there is no separate copy step.
+2. Commit `index.html` + `.nojekyll` to `claude/briefing` and push. Never push to `main`.
 
-## STEP 5 — Persist state (durable Workspace Drive token)
-Run the state-update step, which writes the assistant state back to Drive using
-the durable Workspace account (`DRIVE_STATE_ACCOUNT`), never the personal token:
+## STEP 5 — Persist state (Drive connector, durable)
+Merge this run into the state and write the next state locally (no network):
 ```bash
-node src/run-state-update.mjs
+CONNECTOR_STATE_FILE=/tmp/connector-state.json node src/run-state-update.mjs
 ```
-The Drive connector can read file content but not overwrite it, so the write-back
-uses the Workspace Drive OAuth token. This requires `DRIVE_STATE_ACCOUNT` to name
-a Workspace account whose refresh token carries Drive scope and that can write the
-state file (see `GMAIL_ACCOUNTS_JSON` notes in the implementation guide).
+This reads the connector copy loaded in STEP 1 plus `/tmp/briefing-state-full.json`
+and writes `/tmp/next-state.json`. Upload that file to Drive with the Drive
+connector (`create_file`, `disableConversionToGoogleType: true`) into the same
+folder as the state file from STEP 1, titled `ben-assistant-state.json`. The
+connector can create files but not overwrite them, so a new copy is written each
+run and STEP 1 always reads the newest. This path needs no Drive-scoped OAuth
+token, so the weekly-expiring personal token can never halt the write-back.
+
+If a Workspace account is later authorized with Drive scope (`DRIVE_STATE_ACCOUNT`),
+run `node src/run-state-update.mjs` **without** `CONNECTOR_STATE_FILE` to overwrite
+a single fixed file over OAuth instead.
