@@ -1,65 +1,64 @@
 /**
- * Merge the agent-written narrative into briefing.json and carry arc memory
+ * Merge the agent-written brief into briefing.json and carry item memory
  * into the state-update payload.
  *
- * The daily routine's synthesis step (the agent acting as chief of staff)
- * writes /tmp/narrative.json. This script:
+ * The daily routine's analysis step writes /tmp/brief.json following the
+ * `brief` block of schemas/briefing.schema.json (BLUF + numbered priority
+ * items). This script:
  *   1. validates it (clear errors so the agent can self-correct and rerun),
  *   2. backfills thread links from the gathered sections by conversationKey,
- *   3. sets briefing.narrative and rewrites briefing.json,
- *   4. appends each arc's `memory` to /tmp/briefing-state-update.json so
+ *   3. sets briefing.brief and rewrites briefing.json,
+ *   4. appends each item's `memory` to /tmp/briefing-state-update.json so
  *      run-state-update.mjs persists storylines for tomorrow's run.
  *
- * Usage: node src/merge-narrative.mjs [/tmp/narrative.json]
+ * No reply drafting: items link Ben to the source thread only.
+ *
+ * Usage: node src/merge-narrative.mjs [/tmp/brief.json]
  */
 import fs from 'node:fs';
 
-const narrativePath = process.argv[2] || process.env.NARRATIVE_JSON || '/tmp/narrative.json';
+const briefPath = process.argv[2] || process.env.BRIEF_JSON || '/tmp/brief.json';
 const briefingPath = process.env.BRIEFING_JSON || 'briefing.json';
 const stateUpdatePath = '/tmp/briefing-state-update.json';
 
-const fail = msg => { console.error(`NARRATIVE INVALID: ${msg}`); process.exit(1); };
+const fail = msg => { console.error(`BRIEF INVALID: ${msg}`); process.exit(1); };
 
-let narrative;
+let brief;
 try {
-  narrative = JSON.parse(fs.readFileSync(narrativePath, 'utf8'));
+  brief = JSON.parse(fs.readFileSync(briefPath, 'utf8'));
 } catch (err) {
-  fail(`cannot read ${narrativePath}: ${err.message}`);
+  fail(`cannot read ${briefPath}: ${err.message}`);
 }
 
 // ── Structural validation (friendly errors for the agent) ────────────────────
-if (!narrative.headline || typeof narrative.headline !== 'string') fail('missing "headline" (one-line string)');
-if (narrative.headline.length > 160) fail('"headline" over 160 chars — tighten it');
-if (!narrative.story || typeof narrative.story !== 'string') fail('missing "story" (short paragraphs, \\n\\n separated)');
-if (!Array.isArray(narrative.arcs) || narrative.arcs.length === 0) fail('"arcs" must be a non-empty array (3–6 storylines)');
-if (narrative.arcs.length > 6) fail(`${narrative.arcs.length} arcs — cap is 6; merge or demote the extras to quickHits`);
+if (!brief.bottomLine || typeof brief.bottomLine !== 'string') fail('missing "bottomLine" (1–3 sentence BLUF)');
+if (brief.bottomLine.length > 400) fail('"bottomLine" over 400 chars — this is a BLUF, tighten it');
+if (brief.keyPoints && (!Array.isArray(brief.keyPoints) || brief.keyPoints.length > 5)) fail('"keyPoints" must be an array of at most 5 strings');
+if (!Array.isArray(brief.items) || brief.items.length === 0) fail('"items" must be a non-empty array (3–6 priority items)');
+if (brief.items.length > 6) fail(`${brief.items.length} items — cap is 6; demote the extras to otherDevelopments`);
 
-const TRENDS = ['rising', 'steady', 'waiting', 'stalling', 'closing', 'new'];
-narrative.arcs.forEach((arc, i) => {
-  const at = `arcs[${i}]`;
-  if (!arc.id) fail(`${at}: missing "id" (stable slug, e.g. "bda-abo-funds")`);
-  if (!arc.title) fail(`${at}: missing "title"`);
-  if (!arc.today) fail(`${at}: missing "today" (what changed today)`);
-  if (arc.trend && !TRENDS.includes(arc.trend)) fail(`${at}: trend "${arc.trend}" not one of ${TRENDS.join('/')}`);
-  for (const [j, a] of (arc.actions || []).entries()) {
-    if (!a.type || !a.label) fail(`${at}.actions[${j}]: needs "type" and "label"`);
-    if (a.type === 'reply' && !a.to) fail(`${at}.actions[${j}]: reply action needs "to"`);
-    if (a.type === 'open' && !(a.threadId || arc.viewThreadId)) fail(`${at}.actions[${j}]: open action needs a threadId (or arc.viewThreadId)`);
-    if (a.type === 'calendar' && !a.title) fail(`${at}.actions[${j}]: calendar action needs "title"`);
-  }
+const STATUSES = ['action_required', 'awaiting_reply', 'monitoring', 'new', 'resolved'];
+brief.items.forEach((item, i) => {
+  const at = `items[${i}]`;
+  if (!item.id) fail(`${at}: missing "id" (stable slug, e.g. "bda-abo-funds")`);
+  if (!item.title) fail(`${at}: missing "title"`);
+  if (!item.development) fail(`${at}: missing "development" (what changed since the last brief)`);
+  if (!item.status) fail(`${at}: missing "status"`);
+  if (!STATUSES.includes(item.status)) fail(`${at}: status "${item.status}" not one of ${STATUSES.join('/')}`);
+  if (item.status === 'action_required' && !item.action) fail(`${at}: status is action_required but "action" is empty`);
+  if (item.calendarSuggestion && !item.calendarSuggestion.title) fail(`${at}.calendarSuggestion: needs "title"`);
+  // Hard rule: no drafted replies anywhere in the brief.
+  if (item.actions || item.replyDraft || item.body) fail(`${at}: reply drafts / action buttons are not permitted — items link to the thread only`);
 });
 
-for (const [i, d] of (narrative.decisions || []).entries()) {
-  if (!d.question) fail(`decisions[${i}]: missing "question"`);
-}
-for (const [i, q] of (narrative.quickHits || []).entries()) {
-  if (!q.text) fail(`quickHits[${i}]: missing "text"`);
+for (const [i, d] of (brief.otherDevelopments || []).entries()) {
+  if (!d.text) fail(`otherDevelopments[${i}]: missing "text"`);
 }
 
 // ── Merge into briefing.json ─────────────────────────────────────────────────
 const briefing = JSON.parse(fs.readFileSync(briefingPath, 'utf8'));
 
-// Backfill thread links from gathered items so every arc can deep-link.
+// Backfill thread links from gathered items so every brief item can deep-link.
 const byKey = new Map();
 for (const list of Object.values(briefing.sections || {})) {
   if (!Array.isArray(list)) continue;
@@ -67,35 +66,35 @@ for (const list of Object.values(briefing.sections || {})) {
     if (item?.conversationKey && !byKey.has(item.conversationKey)) byKey.set(item.conversationKey, item);
   }
 }
-for (const arc of narrative.arcs) {
-  if (!arc.viewThreadId) {
-    const hit = (arc.conversationKeys || []).map(k => byKey.get(k)).find(Boolean);
+for (const item of brief.items) {
+  if (!item.viewThreadId) {
+    const hit = (item.conversationKeys || []).map(k => byKey.get(k)).find(Boolean);
     if (hit) {
-      arc.viewThreadAccount = arc.viewThreadAccount || hit.viewThreadAccount || hit.sourceAccount;
-      arc.viewThreadId = hit.viewThreadId || hit.gmailThreadId;
+      item.viewThreadAccount = item.viewThreadAccount || hit.viewThreadAccount || hit.sourceAccount;
+      item.viewThreadId = hit.viewThreadId || hit.gmailThreadId;
     }
   }
 }
 
-briefing.narrative = narrative;
+briefing.brief = brief;
+delete briefing.narrative; // retire the old block if a stale one is present
 fs.writeFileSync(briefingPath, JSON.stringify(briefing, null, 2));
-console.log(`Narrative merged into ${briefingPath} (${narrative.arcs.length} arcs, ${(narrative.decisions || []).length} decisions)`);
+console.log(`Brief merged into ${briefingPath} (${brief.items.length} items, ${(brief.otherDevelopments || []).length} other developments)`);
 
-// ── Carry arc memory into the state-update payload ───────────────────────────
+// ── Carry item memory into the state-update payload ──────────────────────────
 try {
   const update = JSON.parse(fs.readFileSync(stateUpdatePath, 'utf8'));
-  update.arcs = narrative.arcs.map(a => ({
-    id: a.id,
-    title: a.title,
-    account: a.account || '',
-    trend: a.trend || 'steady',
-    stakes: a.stakes || '',
-    importance: a.importance || 3,
-    memory: a.memory || a.today || '',
-    conversationKeys: a.conversationKeys || []
+  update.arcs = brief.items.map(it => ({
+    id: it.id,
+    title: it.title,
+    account: it.account || '',
+    status: it.status,
+    priority: it.priority || 3,
+    memory: it.memory || it.development || '',
+    conversationKeys: it.conversationKeys || []
   }));
   fs.writeFileSync(stateUpdatePath, JSON.stringify(update, null, 2));
-  console.log(`Arc memory staged for state update (${update.arcs.length} storylines)`);
+  console.log(`Item memory staged for state update (${update.arcs.length} storylines)`);
 } catch (err) {
-  console.warn(`Could not stage arc memory (${err.message}) — run the gather step before merge-narrative.`);
+  console.warn(`Could not stage item memory (${err.message}) — run the gather step before merge-narrative.`);
 }

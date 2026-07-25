@@ -1,15 +1,23 @@
 /**
- * Render the daily briefing as a narrative "chief of staff" page.
+ * Render the daily briefing as a formal briefing document.
  *
- * Reads briefing.json (facts gathered by scripts + `narrative` written by the
- * agent's synthesis step), validates against schemas/briefing.schema.json, and
- * writes dist/briefing.plain.html for encrypt-page.mjs.
+ * Format follows established briefing conventions — President's Daily Brief
+ * (short numbered items, each present because it merits attention or ties to an
+ * upcoming decision) and BLUF memo structure (bottom line first, compressed
+ * background, supporting detail relegated to an appendix):
  *
- * Design intent: this is a briefing, not an inbox mirror. The story leads;
- * storylines carry memory (so far → today → heading → needs); decisions arrive
- * teed up with one-click actions; raw categorized mail survives only as a
- * collapsed appendix. If the narrative is missing (synthesis failed), a plain
- * fallback keeps the page useful.
+ *   1. BOTTOM LINE        — 1–3 sentence BLUF
+ *   2. KEY POINTS         — up to 5 scannable bullets
+ *   3. PRIORITY ITEMS     — numbered; Background / Development / Assessment /
+ *                           Action; status + account designators; thread link
+ *   4. SCHEDULE           — tomorrow's commitments, proposed calendar entries
+ *   5. OTHER DEVELOPMENTS — one-line items
+ *   6. ROUTINE TRAFFIC    — one-line disposition of the compressed mass
+ *   Appendix              — full categorized traffic, collapsed
+ *
+ * No reply drafting anywhere: every item links to the source thread; Ben
+ * composes his own responses. Reads briefing.json (facts + `brief` written by
+ * the routine's analysis step), validates, writes dist/briefing.plain.html.
  */
 import fs from 'node:fs';
 import Ajv from 'ajv/dist/2020.js';
@@ -29,66 +37,53 @@ if (!validate(briefing)) {
 
 const meta = briefing.metadata || {};
 const sections = briefing.sections || {};
-const narrative = briefing.narrative || null;
+const brief = briefing.brief || null;
 const TZ = meta.timezone || 'America/New_York';
 const todayISO = localISODate(new Date(), TZ);
 const isStale = meta.date !== todayISO;
 
-// ── account identity ─────────────────────────────────────────────────────────
-// Ben's three hats: Biodynamic Association board, Heartspring Gardens startup,
-// personal life. Each gets a stable hue so a glance places every item.
+// ── account designators ──────────────────────────────────────────────────────
 const ACCOUNT_META = {};
 for (const a of briefing.accounts || []) {
   const email = (a.email || '').toLowerCase();
-  let cls = 'acct-other';
-  if (email.includes('biodynamics')) cls = 'acct-bda';
-  else if (email.includes('heartspring')) cls = 'acct-hs';
-  else if (email) cls = 'acct-personal';
-  ACCOUNT_META[email] = { label: a.label || a.email, cls };
+  let cls = 'tag-other';
+  if (email.includes('biodynamics')) cls = 'tag-bda';
+  else if (email.includes('heartspring')) cls = 'tag-hs';
+  else if (email) cls = 'tag-personal';
+  ACCOUNT_META[email] = { label: (a.label || a.email || '').toUpperCase(), cls };
 }
 function acct(email) {
   const key = String(email || '').toLowerCase();
-  return ACCOUNT_META[key] || { label: shortAcct(email), cls: 'acct-other' };
-}
-function shortAcct(email) {
+  if (ACCOUNT_META[key]) return ACCOUNT_META[key];
   const e = String(email || '');
-  if (e.includes('biodynamics')) return 'Biodynamics';
-  if (e.includes('heartspring')) return 'Heartspring';
-  if (e.includes('gmail')) return 'Personal';
-  return e || '—';
+  if (e.includes('biodynamics')) return { label: 'BIODYNAMICS', cls: 'tag-bda' };
+  if (e.includes('heartspring')) return { label: 'HEARTSPRING', cls: 'tag-hs' };
+  if (e.includes('gmail')) return { label: 'PERSONAL', cls: 'tag-personal' };
+  return { label: e.toUpperCase() || '—', cls: 'tag-other' };
 }
-function acctChip(email) {
+function acctTag(email) {
   if (!email) return '';
   const { label, cls } = acct(email);
-  return `<span class="chip ${cls}">${esc(label)}</span>`;
+  return `<span class="tag ${cls}">${esc(label)}</span>`;
 }
 
-// ── trend vocabulary ─────────────────────────────────────────────────────────
-const TREND = {
-  rising: { glyph: '↗', label: 'gaining momentum', cls: 'trend-rising' },
-  steady: { glyph: '→', label: 'steady', cls: 'trend-steady' },
-  waiting: { glyph: '◷', label: 'waiting on them', cls: 'trend-waiting' },
-  stalling: { glyph: '↘', label: 'stalling — needs a nudge', cls: 'trend-stalling' },
-  closing: { glyph: '✓', label: 'wrapping up', cls: 'trend-closing' },
-  new: { glyph: '✦', label: 'new this week', cls: 'trend-new' }
+// ── status designators ───────────────────────────────────────────────────────
+const STATUS = {
+  action_required: { label: 'ACTION REQUIRED', cls: 'st-action' },
+  awaiting_reply: { label: 'AWAITING REPLY', cls: 'st-await' },
+  monitoring: { label: 'MONITORING', cls: 'st-monitor' },
+  new: { label: 'NEW', cls: 'st-new' },
+  resolved: { label: 'RESOLVED', cls: 'st-resolved' }
 };
-function trendChip(t) {
-  const tr = TREND[t] || TREND.steady;
-  return `<span class="trend ${tr.cls}" title="${esc(tr.label)}">${tr.glyph} ${esc(tr.label)}</span>`;
+function statusTag(s) {
+  const st = STATUS[s] || STATUS.monitoring;
+  return `<span class="tag ${st.cls}">${st.label}</span>`;
 }
 
-// ── links (all actions are plain <a target="_blank">; nothing auto-sends) ────
+// ── links (open-thread + calendar only; no compose, nothing auto-sends) ──────
 function threadLink(account, threadId) {
   if (!threadId) return '';
   return `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(account || '')}#all/${encodeURIComponent(threadId)}`;
-}
-function composeLink({ account, to, subject, body }) {
-  const p = new URLSearchParams({ view: 'cm', fs: '1' });
-  if (account) p.set('authuser', account);
-  if (to) p.set('to', to);
-  if (subject) p.set('su', subject);
-  if (body) p.set('body', body);
-  return `https://mail.google.com/mail/?${p.toString()}`;
 }
 function calendarTemplateLink({ title, start, end, details, location }) {
   const p = new URLSearchParams({ action: 'TEMPLATE', text: title || 'New event' });
@@ -109,246 +104,221 @@ function extA(href, cls, label) {
   return `<a class="${cls}" href="${escAttr(href)}" target="_blank" rel="noopener">${label}</a>`;
 }
 
-// ── narrative components ─────────────────────────────────────────────────────
-function hero() {
-  const n = narrative || fallbackNarrative();
+// ── document sections ────────────────────────────────────────────────────────
+function masthead() {
   const dateLine = meta.todayLabel || meta.date;
+  const srcCount = (briefing.accounts || []).length;
   return `
-  <section class="hero">
-    <div class="kicker">Chief of staff briefing · ${esc(dateLine)}</div>
-    <h1>${esc(n.headline)}</h1>
-    <div class="story">${n.story.split(/\n\n+/).map(p => `<p>${esc(p)}</p>`).join('')}</div>
-  </section>`;
+  <header class="masthead">
+    <div class="mast-title">DAILY BRIEFING</div>
+    <div class="mast-meta">
+      <span>${esc(dateLine)}</span>
+      <span>Prepared ${esc(fmtTime(meta.generatedAt))} ET</span>
+      <span>Sources: ${srcCount} mail accounts · calendars · messages</span>
+    </div>
+  </header>`;
 }
 
-function accountLegend() {
-  const chips = (briefing.accounts || []).map(a => {
+function filterBar() {
+  const btns = (briefing.accounts || []).map(a => {
     const { label, cls } = acct(a.email);
-    return `<button class="chip ${cls} filter-chip" data-account="${escAttr((a.email || '').toLowerCase())}" onclick="filterAccount(this)">${esc(label)}</button>`;
+    return `<button class="tag ${cls} filter-btn" data-account="${escAttr((a.email || '').toLowerCase())}" onclick="filterAccount(this)">${esc(label)}</button>`;
   }).join('');
-  return `<div class="legend" role="group" aria-label="Filter by account">
-    <button class="chip acct-all filter-chip active" data-account="all" onclick="filterAccount(this)">All</button>${chips}
-  </div>`;
+  return `<nav class="filterbar" role="group" aria-label="Filter by account">
+    <button class="tag tag-other filter-btn active" data-account="all" onclick="filterAccount(this)">ALL</button>${btns}
+  </nav>`;
 }
 
-function storylines() {
-  const n = narrative || fallbackNarrative();
-  const arcs = [...(n.arcs || [])].sort((a, b) => (b.importance || 3) - (a.importance || 3));
-  if (!arcs.length) return '';
+function bottomLine() {
+  const b = brief || fallbackBrief();
   return `
-  <section class="block">
-    <h2 class="block-title">The storylines</h2>
-    ${arcs.map(arcCard).join('')}
+  <section class="doc-sec">
+    <h2 class="sec-label">1. Bottom line</h2>
+    <p class="bluf">${esc(b.bottomLine)}</p>
+    ${b.keyPoints?.length ? `<ul class="keypoints">${b.keyPoints.map(k => `<li>${esc(k)}</li>`).join('')}</ul>` : ''}
   </section>`;
 }
 
-function arcCard(arc) {
-  const email = (arc.account || '').toLowerCase();
-  const beats = [
-    arc.soFar ? beat('The story so far', arc.soFar) : '',
-    beat('Today', arc.today),
-    arc.heading ? beat('Where it’s heading', arc.heading) : ''
+function priorityItems() {
+  const b = brief || fallbackBrief();
+  const items = [...(b.items || [])].sort((x, y) => (y.priority || 3) - (x.priority || 3));
+  if (!items.length) return '';
+  return `
+  <section class="doc-sec">
+    <h2 class="sec-label">2. Priority items</h2>
+    <ol class="items">${items.map(itemBlock).join('')}</ol>
+  </section>`;
+}
+
+function itemBlock(item) {
+  const email = (item.account || '').toLowerCase();
+  const openHref = threadLink(item.viewThreadAccount || item.account, item.viewThreadId);
+  const fields = [
+    item.background ? field('Background', item.background) : '',
+    field('Development', item.development),
+    item.assessment ? field('Assessment', item.assessment) : ''
   ].join('');
-  const needs = arc.needs
-    ? `<div class="needs"><span class="needs-label">Needs from you</span>${esc(arc.needs)}</div>`
-    : '';
-  const openHref = threadLink(arc.viewThreadAccount || arc.account, arc.viewThreadId);
-  const autoOpen = openHref && !(arc.actions || []).some(a => a.type === 'open')
-    ? extA(openHref, 'btn btn-quiet', 'Open thread')
-    : '';
+  const action = item.action ? `
+    <div class="action-line">
+      <span class="action-label">Action${item.due ? ` — ${esc(item.due)}` : ''}</span>
+      <span class="action-text">${esc(item.action)}</span>
+    </div>` : '';
+  const links = [
+    openHref ? extA(openHref, 'doc-link', 'Open thread →') : '',
+    item.calendarSuggestion ? extA(calendarTemplateLink(item.calendarSuggestion), 'doc-link', 'Add to calendar →') : ''
+  ].filter(Boolean).join('');
   return `
-  <article class="arc" data-account="${escAttr(email)}">
-    <header class="arc-head">
-      <div class="arc-chips">${acctChip(arc.account)}${trendChip(arc.trend)}</div>
-      <h3 class="arc-title">${esc(arc.title)}</h3>
-      ${arc.stakes ? `<div class="stakes">${esc(arc.stakes)}</div>` : ''}
-    </header>
-    <div class="arc-body">${beats}</div>
-    ${needs}
-    <div class="actions">${(arc.actions || []).map(a => actionButton(a, arc)).join('')}${autoOpen}</div>
-  </article>`;
+  <li class="item" data-account="${escAttr(email)}">
+    <div class="item-head">
+      <h3 class="item-title">${esc(item.title)}</h3>
+      <div class="item-tags">${acctTag(item.account)}${statusTag(item.status)}</div>
+    </div>
+    <div class="item-body">${fields}</div>
+    ${action}
+    ${links ? `<div class="item-links">${links}</div>` : ''}
+  </li>`;
 }
 
-function beat(label, text) {
-  return `<div class="beat"><span class="beat-label">${label}</span><span class="beat-text">${esc(text)}</span></div>`;
+function field(label, text) {
+  return `<p class="field"><span class="field-label">${label} —</span> ${esc(text)}</p>`;
 }
 
-function actionButton(a, arc) {
-  const account = a.account || arc?.viewThreadAccount || arc?.account || '';
-  if (a.type === 'reply') {
-    return extA(composeLink({ account, to: a.to, subject: a.subject, body: a.body }), 'btn btn-primary', esc(a.label));
-  }
-  if (a.type === 'calendar') {
-    return extA(calendarTemplateLink(a), 'btn btn-cal', esc(a.label));
-  }
-  if (a.type === 'open') {
-    const href = threadLink(account, a.threadId || arc?.viewThreadId);
-    return href ? extA(href, 'btn btn-quiet', esc(a.label)) : '';
-  }
-  return '';
-}
-
-function decisions() {
-  const list = narrative?.decisions || [];
-  if (!list.length) return '';
-  return `
-  <section class="block">
-    <h2 class="block-title">Decisions, teed up</h2>
-    <ol class="decision-list">
-      ${list.map(d => `
-      <li class="decision" ${d.arcId ? `data-arc="${escAttr(d.arcId)}"` : ''}>
-        <div class="decision-q">${esc(d.question)}</div>
-        ${d.context ? `<div class="decision-ctx">${esc(d.context)}</div>` : ''}
-        ${d.leaning ? `<div class="decision-lean">My read: ${esc(d.leaning)}</div>` : ''}
-        <div class="actions">${(d.options || []).map(o => decisionOption(o)).join('')}</div>
-      </li>`).join('')}
-    </ol>
-  </section>`;
-}
-
-function decisionOption(o) {
-  if (o?.action?.type) return actionButton(o.action, null) || `<span class="option">${esc(o.label || '')}</span>`;
-  return o?.label ? `<span class="option">${esc(o.label)}${o.detail ? ` — ${esc(o.detail)}` : ''}</span>` : '';
-}
-
-// ── schedule ─────────────────────────────────────────────────────────────────
 function schedule() {
   const tomorrow = sections.tomorrowSchedule || [];
   const week = sections.weekSchedule || [];
   const proposals = sections.calendarProposals || [];
   if (!tomorrow.length && !week.length && !proposals.length) return '';
   return `
-  <section class="block">
-    <h2 class="block-title">${esc(meta.tomorrowLabel || 'Tomorrow')}</h2>
-    <div id="tomorrow-schedule" class="timeline">
-      ${tomorrow.length ? tomorrow.map(eventRow).join('') : '<div class="empty">Nothing on the calendar tomorrow — a clear runway.</div>'}
+  <section class="doc-sec">
+    <h2 class="sec-label">3. Schedule — ${esc(meta.tomorrowLabel || 'tomorrow')}</h2>
+    <div id="tomorrow-schedule" class="sched">
+      ${tomorrow.length ? tomorrow.map(eventRow).join('') : '<p class="none">No commitments scheduled.</p>'}
     </div>
     ${proposals.length ? `
-    <h3 class="sub-title">Wants a spot on the calendar</h3>
-    ${proposals.map(proposalCard).join('')}` : ''}
+    <h3 class="subsec-label">Proposed calendar entries</h3>
+    ${proposals.map(proposalRow).join('')}` : ''}
     ${week.length > tomorrow.length ? `
-    <details class="week"><summary>Rest of the week (${week.length} events)</summary>
-      <div class="timeline">${week.map(eventRow).join('')}</div>
+    <details class="week"><summary>Remainder of week — ${week.length} events</summary>
+      <div class="sched">${week.map(eventRow).join('')}</div>
     </details>` : ''}
   </section>`;
 }
 
 function eventRow(ev) {
-  const t = ev.allDay ? 'All day' : fmtTime(ev.start);
-  return `<div class="event">
-    <span class="event-time">${esc(t)}</span>
-    <span class="event-dot" style="--dot:${escAttr(ev.color || '#3A7556')}"></span>
-    <span class="event-body"><strong>${esc(ev.title)}</strong>${ev.location ? ` · ${esc(ev.location)}` : ''}<span class="event-cal">${esc(ev.calendarName || '')}</span></span>
-    ${ev.htmlLink ? extA(ev.htmlLink, 'btn btn-mini', 'Open') : ''}
+  const t = ev.allDay ? 'ALL DAY' : fmtTime(ev.start);
+  return `<div class="sched-row">
+    <span class="sched-time">${esc(t)}</span>
+    <span class="sched-body"><strong>${esc(ev.title)}</strong>${ev.location ? `, ${esc(ev.location)}` : ''} <span class="sched-cal">(${esc(ev.calendarName || '')})</span></span>
+    ${ev.htmlLink ? extA(ev.htmlLink, 'doc-link', 'Open →') : ''}
   </div>`;
 }
 
-function proposalCard(p, i) {
+function proposalRow(p, i) {
   const id = `prop-${i}`;
   const start = p.start || defaultStart();
-  const end = p.end || '';
-  const href = calendarTemplateLink({ title: p.title, start, end, details: p.context || p.detail, location: p.location });
+  const href = calendarTemplateLink({ title: p.title, start, end: p.end || '', details: p.context || p.detail, location: p.location });
   return `<div class="proposal" data-account="${escAttr((p.account || '').toLowerCase())}">
-    <div class="proposal-head">${acctChip(p.account)}<strong>${esc(p.title)}</strong></div>
-    ${p.context ? `<div class="proposal-ctx">${esc(p.context)}</div>` : ''}
+    <div class="proposal-line">${acctTag(p.account)}<strong>${esc(p.title)}</strong>${p.context ? ` — ${esc(p.context)}` : ''}</div>
     <div class="proposal-controls">
       <input type="datetime-local" id="${id}-start" value="${escAttr(toLocalInput(start))}" onchange="updateCalLink('${id}')">
-      <a id="${id}-link" class="btn btn-cal" href="${escAttr(href)}" target="_blank" rel="noopener"
+      <a id="${id}-link" class="doc-link" href="${escAttr(href)}" target="_blank" rel="noopener"
          data-title="${escAttr(p.title || '')}" data-details="${escAttr(p.context || p.detail || '')}" data-location="${escAttr(p.location || '')}"
-         onclick="addToSchedule('${id}')">Add to calendar</a>
+         onclick="addToSchedule('${id}')">Add to calendar →</a>
     </div>
   </div>`;
 }
 
-// ── quick hits + noise ───────────────────────────────────────────────────────
-function quickHits() {
-  const list = narrative?.quickHits || [];
+function otherDevelopments() {
+  const list = brief?.otherDevelopments || [];
   if (!list.length) return '';
   return `
-  <section class="block">
-    <h2 class="block-title">Quick hits</h2>
-    <ul class="hits">
-      ${list.map(q => {
-        const href = q.viewThreadId ? threadLink(q.viewThreadAccount || q.account, q.viewThreadId) : '';
-        return `<li data-account="${escAttr((q.account || '').toLowerCase())}">${acctChip(q.account)} ${esc(q.text)}${href ? ` ${extA(href, 'hit-link', 'view')}` : ''}</li>`;
+  <section class="doc-sec">
+    <h2 class="sec-label">4. Other developments</h2>
+    <ul class="devs">
+      ${list.map(d => {
+        const href = d.viewThreadId ? threadLink(d.viewThreadAccount || d.account, d.viewThreadId) : '';
+        return `<li data-account="${escAttr((d.account || '').toLowerCase())}">${acctTag(d.account)} ${esc(d.text)}${href ? ` ${extA(href, 'doc-link', 'Open →')}` : ''}</li>`;
       }).join('')}
     </ul>
   </section>`;
 }
 
-function noiseLine() {
-  const n = narrative?.noise;
-  const count = n?.count ?? ((sections.newsletter?.length || 0) + (sections.spam?.length || 0));
-  if (!count && !n?.note) return '';
-  const note = n?.note || 'newsletters, promotions, and receipts — nothing that needs you.';
-  return `<div class="noise">Compressed ${count} lower-signal messages: ${esc(note)}</div>`;
+function routineTraffic() {
+  const rt = brief?.routineTraffic;
+  const count = rt?.count ?? ((sections.newsletter?.length || 0) + (sections.spam?.length || 0));
+  if (!count && !rt?.note) return '';
+  return `
+  <section class="doc-sec">
+    <h2 class="sec-label">5. Routine traffic</h2>
+    <p class="routine">${count} lower-priority messages processed${rt?.note ? ` — ${esc(rt.note)}` : '.'}</p>
+  </section>`;
 }
 
-// ── appendix: the raw inbox, demoted to a collapsed reference ────────────────
 function appendix() {
   const groups = [
     ['Urgent', sections.urgent], ['Business', sections.business], ['Personal', sections.personal],
-    ['Financial', sections.financial], ['Waiting on others', sections.waiting],
+    ['Financial', sections.financial], ['Awaiting response', sections.waiting],
     ['Newsletters', sections.newsletter], ['Spam', sections.spam]
   ].filter(([, list]) => list?.length);
   const imsgs = (sections.imessage || []).filter(m => !String(m.id).includes('notice'));
   if (!groups.length && !imsgs.length) return '';
+  const total = groups.reduce((n, [, l]) => n + l.length, 0);
   return `
-  <section class="block appendix">
-    <details><summary>Everything else — the full sorted inbox (${groups.reduce((n, [, l]) => n + l.length, 0)} threads${imsgs.length ? `, ${imsgs.length} text conversations` : ''})</summary>
-      ${imsgs.length ? `<h3 class="sub-title">Texts</h3><ul class="raw-list">${imsgs.map(m =>
-        `<li><strong>${esc(m.sender)}</strong> — ${esc(m.summary)}${m.needsReply ? ' <span class="tag-reply">reply</span>' : ''}</li>`).join('')}</ul>` : ''}
+  <section class="doc-sec appendix">
+    <details><summary>Appendix — full categorized traffic (${total} threads${imsgs.length ? `, ${imsgs.length} message conversations` : ''})</summary>
+      ${imsgs.length ? `<h3 class="subsec-label">Messages</h3><ul class="raw-list">${imsgs.map(m =>
+        `<li><strong>${esc(m.sender)}</strong> — ${esc(m.summary)}${m.needsReply ? ' <span class="tag st-await">AWAITING REPLY</span>' : ''}</li>`).join('')}</ul>` : ''}
       ${groups.map(([name, list]) => `
-      <h3 class="sub-title">${name} (${list.length})</h3>
+      <h3 class="subsec-label">${name} (${list.length})</h3>
       <ul class="raw-list">
         ${list.map(it => {
           const href = it.viewThreadId || it.gmailThreadId ? threadLink(it.viewThreadAccount || it.account, it.viewThreadId || it.gmailThreadId) : '';
-          return `<li data-account="${escAttr((it.account || '').toLowerCase())}">${acctChip(it.account)} <strong>${esc(it.senderName || it.sender || '')}</strong> — ${esc(it.subject || '')}${href ? ` ${extA(href, 'hit-link', 'open')}` : ''}</li>`;
+          return `<li data-account="${escAttr((it.account || '').toLowerCase())}">${acctTag(it.account)} <strong>${esc(it.senderName || it.sender || '')}</strong> — ${esc(it.subject || '')}${href ? ` ${extA(href, 'doc-link', 'Open →')}` : ''}</li>`;
         }).join('')}
       </ul>`).join('')}
     </details>
   </section>`;
 }
 
-function footer() {
+function docFooter() {
   const s = briefing.stats || {};
-  const tracked = narrative?.arcs?.length || 0;
+  const tracked = brief?.items?.length || 0;
   return `
   <footer>
-    <div>Scanned ${s.emailsScanned ?? 0} messages across ${(briefing.accounts || []).length} accounts · following ${tracked} storylines in memory · generated ${esc(fmtTime(meta.generatedAt))}</div>
-    <div>No emails are ever sent automatically. Every button opens Gmail or Calendar for you to review and send.</div>
+    <div>Basis: ${s.emailsScanned ?? 0} messages, ${(briefing.accounts || []).length} accounts · ${tracked} items under continuing coverage · generated ${esc(fmtTime(meta.generatedAt))} ET</div>
+    <div>No automated actions are taken on this account. All links open the source thread or calendar for review.</div>
   </footer>`;
 }
 
 function staleWarning() {
-  return `<div class="stale">This briefing is from ${esc(meta.date)} — a newer run hasn't landed yet. Treat details as possibly out of date.</div>`;
+  return `<div class="stale">NOTE — This briefing was prepared ${esc(meta.date)}; a more recent edition has not yet been produced. Details may be out of date.</div>`;
 }
 
-// ── fallback when synthesis didn't run ───────────────────────────────────────
-function fallbackNarrative() {
+// ── fallback when the analysis step didn't run ───────────────────────────────
+function fallbackBrief() {
   const urgent = sections.urgent || [];
-  const replies = sections.suggestedReplies || [];
   const waiting = sections.waiting || [];
-  const arcs = [...urgent.map(u => ({
+  const replies = sections.suggestedReplies || [];
+  const items = [...urgent.map(u => ({
     id: `fb-${u.conversationKey || u.subject}`, title: u.subject || 'Urgent thread',
-    account: u.account, trend: 'rising', importance: 5,
-    stakes: 'Flagged urgent by the scanner.', today: u.summary || u.snippet || '',
-    needs: 'Review and respond.', viewThreadAccount: u.viewThreadAccount || u.account, viewThreadId: u.viewThreadId || u.gmailThreadId,
-    actions: []
+    account: u.account, status: 'action_required', priority: 5,
+    development: u.summary || u.snippet || '', action: 'Review and respond.',
+    viewThreadAccount: u.viewThreadAccount || u.account, viewThreadId: u.viewThreadId || u.gmailThreadId
   })), ...replies.slice(0, 4).map(r => ({
-    id: `fb-r-${r.conversationKey || r.subject}`, title: r.title || `Reply to ${r.senderName || r.senderEmail}`,
-    account: r.account, trend: 'waiting', importance: 4,
-    stakes: '', today: r.detail || '', needs: 'A reply from you.',
-    viewThreadAccount: r.viewThreadAccount || r.account, viewThreadId: r.viewThreadId || r.gmailThreadId,
-    actions: [{ type: 'reply', label: 'Draft reply', account: r.account, to: r.to || r.senderEmail, subject: r.subject ? `Re: ${r.subject.replace(/^re:\s*/i, '')}` : '', body: r.body || '' }]
+    id: `fb-r-${r.conversationKey || r.subject}`, title: r.subject || `Message from ${r.senderName || r.senderEmail}`,
+    account: r.account, status: 'action_required', priority: 4,
+    development: r.detail || 'Awaiting your response.', action: 'Respond.',
+    viewThreadAccount: r.viewThreadAccount || r.account, viewThreadId: r.viewThreadId || r.gmailThreadId
   }))].slice(0, 6);
   return {
-    headline: 'Today’s briefing (narrative unavailable — showing the essentials)',
-    story: 'The synthesis step didn’t run this time, so this is the scanner’s straight read: the items below are what most plausibly need you, with drafts where possible. Full sorted mail is in the appendix.',
-    arcs,
-    quickHits: waiting.slice(0, 6).map(w => ({ text: `Waiting on ${w.senderName || w.sender}: ${w.subject}`, account: w.account, viewThreadAccount: w.viewThreadAccount, viewThreadId: w.viewThreadId })),
-    noise: null,
-    decisions: []
+    bottomLine: 'The analysis step did not run for this edition. Items below are the scanner’s unranked flags; full categorized traffic is in the appendix.',
+    keyPoints: [],
+    items,
+    otherDevelopments: waiting.slice(0, 8).map(w => ({
+      text: `Awaiting response from ${w.senderName || w.sender}: ${w.subject}`,
+      account: w.account, viewThreadAccount: w.viewThreadAccount, viewThreadId: w.viewThreadId
+    })),
+    routineTraffic: null
   };
 }
 
@@ -359,29 +329,28 @@ const html = `<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Daily Briefing — ${esc(meta.date)}</title>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>${css()}</style>
 </head>
 <body>
-  <main>
+  <main class="doc">
+    ${masthead()}
     ${isStale ? staleWarning() : ''}
-    ${hero()}
-    ${accountLegend()}
-    ${storylines()}
-    ${decisions()}
+    ${filterBar()}
+    ${bottomLine()}
+    ${priorityItems()}
     ${schedule()}
-    ${quickHits()}
-    ${noiseLine()}
+    ${otherDevelopments()}
+    ${routineTraffic()}
     ${appendix()}
+    ${docFooter()}
   </main>
-  ${footer()}
   <script>${clientJs()}</script>
 </body>
 </html>`;
 
 fs.mkdirSync('dist', { recursive: true });
 fs.writeFileSync(outPath, html);
-console.log(`Rendered ${outPath}${narrative ? '' : ' (fallback mode — no narrative present)'}`);
+console.log(`Rendered ${outPath}${brief ? '' : ' (fallback mode — no brief present)'}`);
 
 // ── utilities ────────────────────────────────────────────────────────────────
 function esc(v) {
@@ -413,101 +382,89 @@ function defaultStart() {
   return d.toISOString();
 }
 
-// ── styles ───────────────────────────────────────────────────────────────────
+// ── styles: restrained document typography ───────────────────────────────────
 function css() {
   return `
 :root {
-  --paper:#FAF7F1; --card:#FFFFFF; --ink:#22301F; --muted:#6B7466; --line:#E5E0D4;
-  --hs:#3A7556; --hs-soft:#E7F0EA; --bda:#A8843A; --bda-soft:#F5EEDD;
-  --pers:#3D5DAA; --pers-soft:#E8EDF8; --urgent:#B4543A; --urgent-soft:#F8E9E3;
+  --paper:#FDFDFB; --ink:#1A1A18; --muted:#5C5C55; --rule:#C9C7BC; --rule-light:#E4E2D8;
+  --action:#8A2E1E; --action-bg:#F7EEEA; --await:#2E4E7E; --await-bg:#EDF1F7;
+  --monitor:#5C5C55; --monitor-bg:#EFEEE8; --new-c:#2F5D3A; --new-bg:#EBF1EC;
+  --bda:#6E5518; --bda-bg:#F3EEDF; --hs:#2F5D3A; --hs-bg:#EBF1EC; --pers:#2E4E7E; --pers-bg:#EDF1F7;
 }
 * { box-sizing:border-box; margin:0; padding:0; }
-body { background:var(--paper); color:var(--ink); font-family:Inter,system-ui,sans-serif; font-size:15px; line-height:1.55; }
-main { max-width:760px; margin:0 auto; padding:28px 20px 40px; }
-a { color:var(--hs); }
+body { background:#F2F1EC; color:var(--ink); font-family:Georgia,'Times New Roman',serif; font-size:15.5px; line-height:1.55; }
+.doc { max-width:720px; margin:0 auto; background:var(--paper); min-height:100vh; padding:36px 44px 48px; border-left:1px solid var(--rule-light); border-right:1px solid var(--rule-light); }
+@media (max-width:600px){ .doc { padding:24px 18px 40px; } }
+a { color:var(--await); }
 
-.kicker { font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-bottom:10px; }
-.hero h1 { font-family:'Instrument Serif',Georgia,serif; font-size:clamp(28px,5vw,40px); line-height:1.15; font-weight:400; margin-bottom:14px; }
-.story p { font-family:'Instrument Serif',Georgia,serif; font-size:19px; line-height:1.5; color:#33402F; margin-bottom:10px; }
-.stale { background:var(--urgent-soft); color:var(--urgent); border:1px solid #E4C0B2; border-radius:10px; padding:10px 14px; margin-bottom:18px; font-weight:500; }
+.masthead { text-align:center; border-bottom:3px double var(--ink); padding-bottom:14px; margin-bottom:8px; }
+.mast-title { font-family:Georgia,serif; font-size:26px; letter-spacing:.28em; font-weight:700; }
+.mast-meta { margin-top:8px; font-family:Helvetica,Arial,sans-serif; font-size:11px; letter-spacing:.06em; color:var(--muted); display:flex; justify-content:center; gap:14px; flex-wrap:wrap; text-transform:uppercase; }
 
-.legend { display:flex; flex-wrap:wrap; gap:8px; margin:22px 0 6px; }
-.chip { display:inline-block; font-size:11.5px; font-weight:600; letter-spacing:.02em; padding:3px 10px; border-radius:999px; border:1px solid transparent; }
-.acct-hs { background:var(--hs-soft); color:var(--hs); }
-.acct-bda { background:var(--bda-soft); color:#7A5E22; }
-.acct-personal { background:var(--pers-soft); color:var(--pers); }
-.acct-other,.acct-all { background:#EEECE4; color:var(--muted); }
-button.filter-chip { cursor:pointer; font-family:inherit; font-size:12px; }
-button.filter-chip.active { outline:2px solid var(--ink); outline-offset:1px; }
+.stale { border:1px solid var(--action); background:var(--action-bg); color:var(--action); font-family:Helvetica,Arial,sans-serif; font-size:12.5px; padding:10px 14px; margin:14px 0 0; }
 
-.block { margin-top:34px; }
-.block-title { font-family:'Instrument Serif',Georgia,serif; font-size:24px; font-weight:400; border-bottom:1px solid var(--line); padding-bottom:6px; margin-bottom:16px; }
-.sub-title { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:18px 0 8px; }
+.filterbar { display:flex; gap:6px; justify-content:center; padding:12px 0 4px; border-bottom:1px solid var(--rule-light); }
+.tag { display:inline-block; font-family:Helvetica,Arial,sans-serif; font-size:9.5px; font-weight:700; letter-spacing:.08em; padding:2px 7px; border:1px solid currentColor; }
+.tag-bda { color:var(--bda); background:var(--bda-bg); }
+.tag-hs { color:var(--hs); background:var(--hs-bg); }
+.tag-personal { color:var(--pers); background:var(--pers-bg); }
+.tag-other { color:var(--muted); background:var(--monitor-bg); }
+.st-action { color:var(--action); background:var(--action-bg); }
+.st-await { color:var(--await); background:var(--await-bg); }
+.st-monitor { color:var(--monitor); background:var(--monitor-bg); }
+.st-new { color:var(--new-c); background:var(--new-bg); }
+.st-resolved { color:var(--muted); background:var(--monitor-bg); }
+button.filter-btn { cursor:pointer; }
+button.filter-btn.active { outline:2px solid var(--ink); outline-offset:1px; }
 
-.arc { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px 20px; margin-bottom:14px; box-shadow:0 1px 2px rgba(34,48,31,.04); }
-.arc-chips { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
-.arc-title { font-family:'Instrument Serif',Georgia,serif; font-size:21px; font-weight:400; }
-.stakes { font-style:italic; color:var(--muted); font-size:13.5px; margin-top:2px; }
-.trend { font-size:11.5px; font-weight:600; padding:3px 9px; border-radius:999px; }
-.trend-rising { background:var(--hs-soft); color:var(--hs); }
-.trend-steady { background:#EEECE4; color:var(--muted); }
-.trend-waiting { background:var(--pers-soft); color:var(--pers); }
-.trend-stalling { background:var(--urgent-soft); color:var(--urgent); }
-.trend-closing { background:#E9F1E4; color:#4C7A3D; }
-.trend-new { background:var(--bda-soft); color:#7A5E22; }
+.doc-sec { margin-top:28px; }
+.sec-label { font-family:Helvetica,Arial,sans-serif; font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; border-bottom:1px solid var(--rule); padding-bottom:5px; margin-bottom:12px; }
+.subsec-label { font-family:Helvetica,Arial,sans-serif; font-size:10.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin:16px 0 8px; }
 
-.arc-body { margin-top:12px; display:grid; gap:8px; }
-.beat { display:grid; grid-template-columns:118px 1fr; gap:10px; }
-.beat-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); padding-top:2px; }
-.beat-text { font-size:14.5px; }
-@media (max-width:560px){ .beat{ grid-template-columns:1fr; gap:2px; } }
+.bluf { font-size:17px; line-height:1.5; font-weight:400; }
+.keypoints { margin:10px 0 0 20px; }
+.keypoints li { margin-bottom:5px; font-size:15px; }
 
-.needs { margin-top:12px; background:#FBF4E6; border-left:3px solid var(--bda); border-radius:0 10px 10px 0; padding:10px 14px; font-size:14.5px; }
-.needs-label { display:block; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#7A5E22; margin-bottom:2px; }
+.items { list-style:none; counter-reset:item; }
+.item { counter-increment:item; padding:16px 0 18px; border-bottom:1px solid var(--rule-light); }
+.item:last-child { border-bottom:none; }
+.item-head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
+.item-title { font-size:17px; font-weight:700; }
+.item-title::before { content:counter(item) '.  '; }
+.item-tags { display:flex; gap:6px; flex:none; }
+.item-body { margin-top:8px; }
+.field { margin-bottom:6px; font-size:14.5px; }
+.field-label { font-family:Helvetica,Arial,sans-serif; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.action-line { margin-top:10px; border-left:3px solid var(--action); background:var(--action-bg); padding:8px 12px; }
+.action-label { display:block; font-family:Helvetica,Arial,sans-serif; font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--action); margin-bottom:2px; }
+.action-text { font-size:14.5px; }
+.item-links { margin-top:10px; display:flex; gap:18px; flex-wrap:wrap; }
+.doc-link { font-family:Helvetica,Arial,sans-serif; font-size:12px; font-weight:700; letter-spacing:.03em; color:var(--await); text-decoration:none; border-bottom:1px solid var(--await); }
+.doc-link:hover { opacity:.75; }
 
-.actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
-.btn { display:inline-block; font-size:13px; font-weight:600; padding:7px 14px; border-radius:9px; text-decoration:none; border:1px solid var(--line); }
-.btn-primary { background:var(--hs); border-color:var(--hs); color:#fff; }
-.btn-cal { background:var(--pers-soft); border-color:#C9D4EC; color:var(--pers); }
-.btn-quiet { background:transparent; color:var(--ink); }
-.btn-mini { font-size:11.5px; padding:3px 9px; background:transparent; color:var(--muted); }
-.option { font-size:13px; padding:7px 12px; border:1px dashed var(--line); border-radius:9px; color:var(--muted); }
+.sched { display:grid; gap:2px; }
+.sched-row { display:flex; gap:14px; align-items:baseline; padding:7px 0; border-bottom:1px dotted var(--rule-light); font-size:14.5px; }
+.sched-time { font-family:Helvetica,Arial,sans-serif; font-size:11.5px; font-weight:700; min-width:70px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.sched-body { flex:1; }
+.sched-cal { color:var(--muted); font-size:13px; }
+.none { color:var(--muted); font-style:italic; }
+.week summary { cursor:pointer; font-family:Helvetica,Arial,sans-serif; font-size:12px; color:var(--muted); margin-top:10px; }
 
-.decision-list { list-style:none; counter-reset:d; }
-.decision { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 18px 16px 52px; margin-bottom:12px; position:relative; counter-increment:d; }
-.decision::before { content:counter(d); position:absolute; left:16px; top:16px; width:24px; height:24px; border-radius:50%; background:var(--ink); color:var(--paper); font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; }
-.decision-q { font-weight:600; font-size:15.5px; }
-.decision-ctx { color:var(--muted); font-size:13.5px; margin-top:4px; }
-.decision-lean { font-style:italic; font-size:13.5px; margin-top:6px; color:#33402F; }
+.proposal { padding:9px 0; border-bottom:1px dotted var(--rule-light); font-size:14.5px; }
+.proposal-line { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+.proposal-controls { display:flex; gap:14px; margin-top:7px; align-items:center; flex-wrap:wrap; }
+.proposal-controls input { font-family:Helvetica,Arial,sans-serif; font-size:12.5px; padding:4px 7px; border:1px solid var(--rule); background:var(--paper); color:var(--ink); }
 
-.timeline { display:grid; gap:6px; }
-.event { display:flex; align-items:baseline; gap:10px; padding:8px 10px; background:var(--card); border:1px solid var(--line); border-radius:10px; }
-.event-time { font-variant-numeric:tabular-nums; font-weight:600; font-size:13px; min-width:64px; color:var(--muted); }
-.event-dot { width:9px; height:9px; border-radius:50%; background:var(--dot,#3A7556); flex:none; align-self:center; }
-.event-body { flex:1; font-size:14px; }
-.event-cal { display:block; font-size:11.5px; color:var(--muted); }
-.empty { color:var(--muted); font-style:italic; padding:6px 2px; }
-.week summary { cursor:pointer; color:var(--muted); font-size:13.5px; margin:10px 0; }
+.devs { list-style:none; }
+.devs li { padding:7px 0; border-bottom:1px dotted var(--rule-light); font-size:14.5px; }
+.routine { font-size:14.5px; color:var(--muted); }
 
-.proposal { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px; }
-.proposal-head { display:flex; gap:8px; align-items:center; }
-.proposal-ctx { color:var(--muted); font-size:13.5px; margin-top:4px; }
-.proposal-controls { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; align-items:center; }
-.proposal-controls input { font-family:inherit; font-size:13px; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--paper); color:var(--ink); }
-.proposal.added { border-color:var(--hs); background:var(--hs-soft); }
+.appendix summary { cursor:pointer; font-family:Helvetica,Arial,sans-serif; font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); padding:6px 0; }
+.raw-list { list-style:none; }
+.raw-list li { padding:6px 0; border-bottom:1px dotted var(--rule-light); font-size:13.5px; }
 
-.hits { list-style:none; display:grid; gap:8px; }
-.hits li { padding:8px 12px; background:var(--card); border:1px solid var(--line); border-radius:10px; font-size:14px; }
-.hit-link { font-size:12px; color:var(--pers); }
-
-.noise { margin-top:26px; color:var(--muted); font-size:13.5px; font-style:italic; border-top:1px dashed var(--line); padding-top:14px; }
-
-.appendix summary { cursor:pointer; font-size:14px; color:var(--muted); padding:10px 0; }
-.raw-list { list-style:none; display:grid; gap:6px; margin-bottom:6px; }
-.raw-list li { font-size:13.5px; padding:6px 10px; background:var(--card); border:1px solid var(--line); border-radius:8px; }
-.tag-reply { font-size:10.5px; font-weight:700; color:var(--urgent); text-transform:uppercase; }
-
-footer { max-width:760px; margin:0 auto; padding:18px 20px 40px; color:var(--muted); font-size:12.5px; border-top:1px solid var(--line); display:grid; gap:4px; }
+footer { max-width:720px; margin:0 auto; padding:16px 44px 40px; font-family:Helvetica,Arial,sans-serif; font-size:11px; color:var(--muted); display:grid; gap:4px; border-top:none; }
+.doc footer { padding:22px 0 0; margin-top:30px; border-top:3px double var(--ink); }
 [data-account].hidden-by-filter { display:none; }
 `;
 }
@@ -517,9 +474,9 @@ function clientJs() {
   return `
 function filterAccount(btn) {
   var target = btn.getAttribute('data-account');
-  document.querySelectorAll('.filter-chip').forEach(function (b) { b.classList.toggle('active', b === btn); });
+  document.querySelectorAll('.filter-btn').forEach(function (b) { b.classList.toggle('active', b === btn); });
   document.querySelectorAll('[data-account]').forEach(function (el) {
-    if (el.classList.contains('filter-chip')) return;
+    if (el.classList.contains('filter-btn')) return;
     var a = el.getAttribute('data-account') || '';
     el.classList.toggle('hidden-by-filter', target !== 'all' && a !== '' && a !== target);
   });
@@ -539,9 +496,7 @@ function updateCalLink(id) {
   link.href = 'https://calendar.google.com/calendar/render?' + p.toString();
 }
 function addToSchedule(id) {
-  var card = document.getElementById(id + '-link');
-  if (card) { var box = card.closest('.proposal'); if (box) box.classList.add('added'); }
-  return true; // let the <a target="_blank"> proceed to Google Calendar
+  return true; // navigation proceeds via the <a target="_blank">
 }
 `;
 }

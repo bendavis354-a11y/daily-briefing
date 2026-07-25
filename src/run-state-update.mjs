@@ -78,9 +78,8 @@ for (const arc of updateData.arcs || []) {
     id: arc.id,
     title: arc.title,
     account: arc.account || prior.account || '',
-    trend: arc.trend,
-    stakes: arc.stakes || prior.stakes || '',
-    importance: arc.importance,
+    status: arc.status,
+    priority: arc.priority,
     memory: arc.memory,
     // Rolling history of the last few briefed beats, oldest → newest.
     history: [...(prior.history || []), `${now.toISOString().slice(0, 10)}: ${arc.memory}`].slice(-7),
