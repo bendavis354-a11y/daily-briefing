@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Gmail",
+      "mcp__Google_Drive",
+      "mcp__Google_Calendar",
+      "mcp__Google-Drive",
+      "mcp__Google-Calendar",
+      "Bash(node *)",
+      "Bash(npm *)",
+      "Bash(CONNECTOR_STATE_FILE=*)",
+      "Bash(CONNECTOR_MESSAGES_FILE=*)",
+      "Bash(BRIEFING_JSON=*)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(cat *)",
+      "Bash(ls *)",
+      "Bash(git status*)",
+      "Bash(git log *)",
+      "Bash(git diff*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git checkout *)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(git push origin claude/briefing*)",
+      "Bash(git push -u origin claude/briefing*)"
+    ],
+    "deny": [
+      "Bash(git push origin main*)",
+      "Bash(git push -u origin main*)",
+      "Bash(git push --force*)"
+    ]
+  }
+}

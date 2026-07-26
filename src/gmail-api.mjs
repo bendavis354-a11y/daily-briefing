@@ -99,12 +99,35 @@ export async function scanMailbox({ account, clientId, clientSecret }) {
     }
   }
 
-  const messages = [];
-  for (const id of ids.keys()) {
-    messages.push(await getMessageMetadata({ accessToken, id, sourceAccount: account.email }));
-  }
+  // Fetch metadata with bounded concurrency: sequential fetches for ~500
+  // messages across mailboxes can exceed the agent's command timeout and make
+  // the whole run appear hung.
+  const messages = await mapLimit([...ids.keys()], 8, id =>
+    getMessageMetadata({ accessToken, id, sourceAccount: account.email })
+  );
 
   return { account, accessToken, messages };
+}
+
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await fn(items[i], i);
+      }
+    })
+  );
+  return out;
+}
+
+// Per-request timeout so a blocked or blackholed connection fails loudly
+// instead of hanging the pipeline indefinitely.
+const FETCH_TIMEOUT_MS = 30000;
+function fetchWithTimeout(url, options = {}) {
+  return fetch(url, { ...options, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 }
 
 export async function listMessageIds({ accessToken, query, max = 250 }) {
@@ -117,7 +140,7 @@ export async function listMessageIds({ accessToken, query, max = 250 }) {
     url.searchParams.set('maxResults', String(Math.min(100, max - out.length)));
     if (pageToken) url.searchParams.set('pageToken', pageToken);
 
-    const res = await fetch(url, { headers: { authorization: `Bearer ${accessToken}` } });
+    const res = await fetchWithTimeout(url, { headers: { authorization: `Bearer ${accessToken}` } });
     if (!res.ok) throw new Error(`Gmail list failed: ${res.status} ${await res.text()}`);
 
     const json = await res.json();
@@ -134,7 +157,7 @@ export async function getMessageMetadata({ accessToken, id, sourceAccount }) {
   url.searchParams.set('format', 'metadata');
   for (const header of HEADERS) url.searchParams.append('metadataHeaders', header);
 
-  const res = await fetch(url, { headers: { authorization: `Bearer ${accessToken}` } });
+  const res = await fetchWithTimeout(url, { headers: { authorization: `Bearer ${accessToken}` } });
   if (!res.ok) throw new Error(`Gmail get metadata failed: ${res.status} ${await res.text()}`);
 
   const msg = await res.json();
@@ -165,7 +188,7 @@ export async function getMessageBody({ accessToken, id, maxChars = 4000 }) {
   const url = new URL(`${GMAIL}/messages/${id}`);
   url.searchParams.set('format', 'full');
 
-  const res = await fetch(url, { headers: { authorization: `Bearer ${accessToken}` } });
+  const res = await fetchWithTimeout(url, { headers: { authorization: `Bearer ${accessToken}` } });
   if (!res.ok) throw new Error(`Gmail get body failed: ${res.status} ${await res.text()}`);
 
   const msg = await res.json();

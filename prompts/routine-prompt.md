@@ -67,6 +67,11 @@ Scans Workspace mailboxes over OAuth, merges personal connector mail, dedupes
 across accounts, scans calendars, loads texts, writes `briefing.json` and the
 state payloads. That produces the FACTS; your analysis comes next.
 
+This step makes many Gmail API calls and can take a few minutes. Run it with a
+10-minute command timeout (timeout: 600000). Do not kill and re-run it midway —
+if it fails, read the error output first; every network call has a 30s timeout,
+so a genuine failure reports itself rather than hanging.
+
 ## STEP 4 — Analyze, then write the brief
 Read `briefing.json` and `/tmp/connector-state.json` together, plus the
 personal thread bodies from STEP 2.

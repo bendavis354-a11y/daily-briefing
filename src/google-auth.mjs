@@ -7,6 +7,7 @@ export async function getAccessToken({ clientId, clientSecret, refreshToken }) {
 
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
+    signal: AbortSignal.timeout(30000),
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       client_id: clientId,
