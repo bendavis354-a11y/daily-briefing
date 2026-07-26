@@ -115,6 +115,14 @@ THEN write `/tmp/brief.json`:
 }
 ```
 
+The document carries an **Action items** checklist built from `sections.todos`.
+Open items are carried forward from `state.openTasks` on every run, so an item
+raised days ago keeps appearing until it is completed — it does not vanish when
+its source message ages out of the scan window. Ben checks items off in the page
+itself; completion is recorded in his browser, so the routine does not see it.
+Do not re-list action items in `otherDevelopments`. Items age out of state after
+45 days.
+
 The document also carries a **Correspondence requiring response** section that
 the renderer builds automatically: every thread whose latest message awaits a
 reply from Ben, oldest first, newsletters and unsolicited mail excluded. It is

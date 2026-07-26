@@ -9,13 +9,15 @@
  *   1. BOTTOM LINE   — 1–3 sentence BLUF plus key points
  *   2. PRIORITY ITEMS — numbered; Background / Development / Assessment /
  *                       Action; status + account designators; thread link
- *   3. CORRESPONDENCE REQUIRING RESPONSE — exhaustive list of threads awaiting
+ *   3. ACTION ITEMS  — persistent checklist; items carry forward across days
+ *                       and are checked off in the page (localStorage)
+ *   4. CORRESPONDENCE REQUIRING RESPONSE — exhaustive list of threads awaiting
  *                       a reply, oldest first; derived from the scan (not from
  *                       the analysis step) so nothing can be dropped by
  *                       editorial judgment; newsletters and spam excluded
- *   4. SCHEDULE      — tomorrow's commitments, proposed calendar entries
- *   5. OTHER DEVELOPMENTS — one-line items
- *   6. ROUTINE TRAFFIC — one-line disposition of the compressed mass
+ *   5. SCHEDULE      — tomorrow's commitments, proposed calendar entries
+ *   6. OTHER DEVELOPMENTS — one-line items
+ *   7. ROUTINE TRAFFIC — one-line disposition of the compressed mass
  *   Appendix         — full categorized traffic, collapsed
  *
  * No reply drafting anywhere: every item links to the source thread; Ben
@@ -152,6 +154,22 @@ orderedItems.forEach((item, i) => {
   for (const key of item.conversationKeys || []) itemNumberByKey.set(key, i + 1);
 });
 
+// Conversation key → Gmail thread, so action items carried forward from earlier
+// runs can still link back to their source thread.
+const threadIdByKey = new Map();
+const threadAccountByKey = new Map();
+for (const list of Object.values(sections)) {
+  if (!Array.isArray(list)) continue;
+  for (const it of list) {
+    const key = it?.conversationKey;
+    const tid = it?.viewThreadId || it?.gmailThreadId;
+    if (key && tid && !threadIdByKey.has(key)) {
+      threadIdByKey.set(key, tid);
+      threadAccountByKey.set(key, it.viewThreadAccount || it.account || '');
+    }
+  }
+}
+
 function priorityItems() {
   if (!orderedItems.length) return '';
   return `
@@ -159,6 +177,65 @@ function priorityItems() {
     <h2 class="sec-label">2. Priority items</h2>
     <ol class="items">${orderedItems.map(itemBlock).join('')}</ol>
   </section>`;
+}
+
+/**
+ * Action items, as a checklist.
+ *
+ * Items persist across days: the pipeline carries open tasks forward until they
+ * are completed. Completion is recorded in the browser (localStorage) keyed by
+ * the task's stable id, so a checked item stays checked across reloads and
+ * across daily republishes of the page. Completed items are hidden behind a
+ * "show completed" toggle rather than deleted.
+ */
+function actionItems() {
+  const todos = sections.todos || [];
+  if (!todos.length) return '';
+  const rows = [...todos].sort((a, b) => {
+    const rank = { high: 0, medium: 1, low: 2 };
+    const d = (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1);
+    if (d) return d;
+    return String(a.addedAt || '').localeCompare(String(b.addedAt || ''));
+  });
+  return `
+  <section class="doc-sec">
+    <h2 class="sec-label">3. Action items — <span id="task-open-count">${rows.length}</span> open</h2>
+    <p class="sec-note">Items remain until checked off. <button type="button" class="link-btn" id="task-toggle" onclick="toggleCompleted()">Show completed</button></p>
+    <ul class="tasks hide-done" id="task-list">${rows.map(taskRow).join('')}</ul>
+  </section>`;
+}
+
+function taskRow(t, i) {
+  const id = t.id || `task-${i}`;
+  const domId = `task-${i}`;
+  const pri = String(t.priority || 'medium').toLowerCase();
+  const priCls = pri === 'high' ? 't-hi' : pri === 'low' ? 't-lo' : 't-md';
+  const href = t.conversationKey && threadIdByKey.get(t.conversationKey)
+    ? threadLink(threadAccountByKey.get(t.conversationKey) || t.account, threadIdByKey.get(t.conversationKey))
+    : '';
+  const age = t.addedAt ? outstandingLabel(Date.parse(t.addedAt)) : '';
+  const meta = [
+    t.account ? acct(t.account).label : '',
+    age ? `outstanding ${age}` : '',
+    t.origin === 'imessage' ? 'from messages' : ''
+  ].filter(Boolean).join(' · ');
+  return `<li class="task" data-account="${escAttr((t.account || '').toLowerCase())}" data-task-id="${escAttr(id)}">
+    <input type="checkbox" class="t-check" id="${domId}" data-task-id="${escAttr(id)}" onchange="toggleTask(this)">
+    <label class="t-label" for="${domId}">
+      <span class="t-pri ${priCls}">${esc(pri)}</span>
+      <span class="t-text">${esc(t.text || '')}</span>
+      <span class="t-sub">${esc(meta)}</span>
+    </label>
+    ${href ? extA(href, 'doc-link', 'Open thread →') : ''}
+  </li>`;
+}
+
+function outstandingLabel(ts) {
+  if (!ts) return '';
+  const days = Math.floor((Date.now() - ts) / 86400000);
+  if (days <= 0) return 'since today';
+  if (days === 1) return '1 day';
+  return `${days} days`;
 }
 
 /**
@@ -186,7 +263,7 @@ function responseQueue() {
   if (!rows.length) {
     return `
   <section class="doc-sec">
-    <h2 class="sec-label">3. Correspondence requiring response</h2>
+    <h2 class="sec-label">4. Correspondence requiring response</h2>
     <p class="none">No threads are currently awaiting a reply.</p>
   </section>`;
   }
@@ -200,7 +277,7 @@ function responseQueue() {
 
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">3. Correspondence requiring response — ${rows.length} thread${rows.length === 1 ? '' : 's'}</h2>
+    <h2 class="sec-label">4. Correspondence requiring response — ${rows.length} thread${rows.length === 1 ? '' : 's'}</h2>
     <p class="sec-note">Complete list of threads awaiting a reply, oldest first. Newsletters and unsolicited mail excluded.</p>
     <ul class="queue">${rows.map(queueRow).join('')}</ul>
   </section>`;
@@ -272,7 +349,7 @@ function schedule() {
   if (!tomorrow.length && !week.length && !proposals.length) return '';
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">4. Schedule — ${esc(meta.tomorrowLabel || 'tomorrow')}</h2>
+    <h2 class="sec-label">5. Schedule — ${esc(meta.tomorrowLabel || 'tomorrow')}</h2>
     <div id="tomorrow-schedule" class="sched">
       ${tomorrow.length ? tomorrow.map(eventRow).join('') : '<p class="none">No commitments scheduled.</p>'}
     </div>
@@ -315,7 +392,7 @@ function otherDevelopments() {
   if (!list.length) return '';
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">5. Other developments</h2>
+    <h2 class="sec-label">6. Other developments</h2>
     <ul class="devs">
       ${list.map(d => {
         const href = d.viewThreadId ? threadLink(d.viewThreadAccount || d.account, d.viewThreadId) : '';
@@ -331,7 +408,7 @@ function routineTraffic() {
   if (!count && !rt?.note) return '';
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">6. Routine traffic</h2>
+    <h2 class="sec-label">7. Routine traffic</h2>
     <p class="routine">${count} lower-priority messages processed${rt?.note ? ` — ${esc(rt.note)}` : '.'}</p>
   </section>`;
 }
@@ -420,6 +497,7 @@ const html = `<!DOCTYPE html>
     ${filterBar()}
     ${bottomLine()}
     ${priorityItems()}
+    ${actionItems()}
     ${responseQueue()}
     ${schedule()}
     ${otherDevelopments()}
@@ -539,6 +617,21 @@ button.filter-btn.active { outline:2px solid var(--ink); outline-offset:1px; }
 .proposal-controls input { font-family:Helvetica,Arial,sans-serif; font-size:12.5px; padding:4px 7px; border:1px solid var(--rule); background:var(--paper); color:var(--ink); }
 
 .sec-note { font-size:12.5px; color:var(--muted); font-style:italic; margin:-6px 0 10px; }
+.link-btn { background:none; border:none; padding:0; font:inherit; font-style:normal; color:var(--await); text-decoration:underline; cursor:pointer; }
+
+.tasks { list-style:none; }
+.tasks li.task { display:flex; align-items:flex-start; gap:11px; padding:9px 0; border-bottom:1px dotted var(--rule-light); }
+.tasks.hide-done li.task.done { display:none; }
+.t-check { width:17px; height:17px; margin-top:2px; flex:none; accent-color:var(--hs, #2F5D3A); cursor:pointer; }
+.t-label { flex:1; cursor:pointer; display:block; }
+.t-pri { font-family:Helvetica,Arial,sans-serif; font-size:9.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; margin-right:7px; }
+.t-hi { color:var(--action); }
+.t-md { color:#6E5518; }
+.t-lo { color:var(--muted); }
+.t-text { font-size:14.5px; }
+.t-sub { display:block; font-family:Helvetica,Arial,sans-serif; font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin-top:3px; }
+.task.done .t-text { text-decoration:line-through; }
+.task.done { opacity:.5; }
 .queue { list-style:none; }
 .queue li { display:flex; justify-content:space-between; align-items:baseline; gap:16px; padding:8px 0; border-bottom:1px dotted var(--rule-light); flex-wrap:wrap; }
 .q-main { display:flex; align-items:baseline; gap:8px; flex:1; min-width:260px; flex-wrap:wrap; }
@@ -590,6 +683,60 @@ function updateCalLink(id) {
 }
 function addToSchedule(id) {
   return true; // navigation proceeds via the <a target="_blank">
+}
+
+// ── action item completion ──────────────────────────────────────────────────
+// Completion is stored in the browser, keyed by the task's stable id, so a
+// checked item stays checked across reloads and across daily republishes of
+// this page. The pipeline carries uncompleted items forward until they are done.
+var TASK_STORE = 'briefing.tasks.done.v1';
+function loadDoneTasks() {
+  try { return JSON.parse(localStorage.getItem(TASK_STORE)) || {}; } catch (e) { return {}; }
+}
+function saveDoneTasks(map) {
+  try { localStorage.setItem(TASK_STORE, JSON.stringify(map)); } catch (e) {}
+}
+function toggleTask(input) {
+  var id = input.getAttribute('data-task-id');
+  var row = input.closest('.task');
+  var done = loadDoneTasks();
+  if (input.checked) { done[id] = new Date().toISOString(); }
+  else { delete done[id]; }
+  saveDoneTasks(done);
+  if (row) row.classList.toggle('done', input.checked);
+  refreshTaskCount();
+}
+function toggleCompleted() {
+  var list = document.getElementById('task-list');
+  var btn = document.getElementById('task-toggle');
+  if (!list || !btn) return;
+  var hiding = list.classList.toggle('hide-done');
+  btn.textContent = hiding ? 'Show completed' : 'Hide completed';
+}
+function refreshTaskCount() {
+  var el = document.getElementById('task-open-count');
+  if (!el) return;
+  var open = document.querySelectorAll('.task:not(.done)').length;
+  el.textContent = open;
+}
+function restoreTasks() {
+  var done = loadDoneTasks();
+  document.querySelectorAll('.task').forEach(function (row) {
+    var id = row.getAttribute('data-task-id');
+    if (!done[id]) return;
+    row.classList.add('done');
+    var box = row.querySelector('.t-check');
+    if (box) box.checked = true;
+  });
+  refreshTaskCount();
+}
+// The encrypted shell injects this document via document.write(), so
+// DOMContentLoaded may already have fired by the time this runs. Restore
+// immediately when the document is ready, otherwise wait for the event.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', restoreTasks);
+} else {
+  restoreTasks();
 }
 `;
 }

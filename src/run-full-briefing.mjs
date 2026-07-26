@@ -606,6 +606,22 @@ if (imessageData && imessageStatus !== 'missing') {
 
 console.log(`iMessages: scanned=${imessagesScanned}, actionable=${imessagesActionable}`);
 
+// ── STEP 5C: Carry forward open action items ─────────────────────────────────
+// An action item raised on a previous day must keep appearing until it is
+// completed — otherwise it disappears silently once its source message ages out
+// of the scan window. Prior open tasks are merged in ahead of today's, oldest
+// first, so long-outstanding work stays visible.
+const todoIds = new Set(todos.map(t => t.id).filter(Boolean));
+const carried = [];
+for (const prior of assistantState.openTasks || []) {
+  if (!prior.id || todoIds.has(prior.id)) continue;
+  todoIds.add(prior.id);
+  carried.push({ ...prior, carriedForward: true });
+}
+carried.sort((a, b) => String(a.addedAt || '').localeCompare(String(b.addedAt || '')));
+todos.unshift(...carried);
+console.log(`Action items: ${todos.length} total (${carried.length} carried forward from prior runs)`);
+
 // ── STEP 6: Write briefing.json ───────────────────────────────────────────────
 console.log('STEP 6: Writing briefing.json…');
 

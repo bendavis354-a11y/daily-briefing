@@ -92,13 +92,33 @@ for (const arc of updateData.arcs || []) {
   }
 }
 
-// Build open tasks from todos
-const openTasks = (updateData.todos || []).map(t => ({
-  text: t.text,
-  priority: t.priority,
-  account: t.account,
-  addedAt: now.toISOString()
-}));
+// Build open action items. These accumulate rather than being replaced: an item
+// stays in memory until it is completed, so it keeps appearing in the briefing
+// across days. Original `addedAt` is preserved so the page can show how long an
+// item has been outstanding. Items are aged out after 45 days to bound growth.
+const TASK_CUTOFF_MS = 45 * 24 * 3600 * 1000;
+const tasksById = new Map();
+for (const prior of currentState.openTasks || []) {
+  if (!prior.id) continue;
+  const added = Date.parse(prior.addedAt || 0);
+  if (added && now - added > TASK_CUTOFF_MS) continue;
+  tasksById.set(prior.id, prior);
+}
+for (const t of updateData.todos || []) {
+  const id = t.id || `task-${t.account || ''}-${t.text || ''}`;
+  const prior = tasksById.get(id);
+  tasksById.set(id, {
+    id,
+    text: t.text,
+    priority: t.priority,
+    account: t.account || prior?.account || '',
+    conversationKey: t.conversationKey || prior?.conversationKey || '',
+    origin: t.origin || prior?.origin || 'email',
+    addedAt: prior?.addedAt || now.toISOString(),
+    lastSeenAt: now.toISOString()
+  });
+}
+const openTasks = [...tasksById.values()].slice(0, 60);
 
 // Build recent runs (keep last 14)
 const thisRun = {

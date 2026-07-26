@@ -114,14 +114,55 @@
     ],
     "todos": [
       {
+        "id": "todo-<maya@x>",
+        "conversationKey": "<maya@x>",
         "account": "ben@heartspringgardens.org",
         "priority": "high",
-        "text": "Confirm deposit timing with Maya."
+        "text": "Confirm the spring order deposit with Maya Fields",
+        "status": "open",
+        "origin": "email",
+        "addedAt": "2026-07-26T00:24:06.188116"
       },
       {
+        "id": "todo-<zach@x>",
+        "conversationKey": "<zach@x>",
+        "account": "benjamin@biodynamics.com",
+        "priority": "high",
+        "text": "Sign and return Q3 reimbursement paperwork",
+        "status": "open",
+        "origin": "email",
+        "addedAt": "2026-07-15T00:24:06.188148",
+        "carriedForward": true
+      },
+      {
+        "id": "todo-<ops@x>",
+        "conversationKey": "<ops@x>",
         "account": "benjamin@biodynamics.com",
         "priority": "medium",
-        "text": "Review tomorrow's Biodynamics notes before the afternoon call."
+        "text": "Summarize ABO carryover figures for the board",
+        "status": "open",
+        "origin": "email",
+        "addedAt": "2026-07-22T00:24:06.188151",
+        "carriedForward": true
+      },
+      {
+        "id": "todo-imsg-elizabeth",
+        "account": "bendavis354@gmail.com",
+        "priority": "medium",
+        "text": "Reply to Elizabeth about the clover seed",
+        "status": "open",
+        "origin": "imessage",
+        "addedAt": "2026-07-25T00:24:06.188154"
+      },
+      {
+        "id": "todo-<ari@x>",
+        "conversationKey": "<ari@x>",
+        "account": "bendavis354@gmail.com",
+        "priority": "low",
+        "text": "Pick a night for dinner with Ari",
+        "status": "open",
+        "origin": "email",
+        "addedAt": "2026-07-24T00:24:06.188156"
       }
     ],
     "business": [
