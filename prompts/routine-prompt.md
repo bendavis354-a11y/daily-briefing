@@ -16,7 +16,10 @@ Ben operates three accounts, and every item must carry its designator:
   arrive via the Drive export when fresh.
 
 This routine runs daily at 4:30 PM America/New_York as an agent session with
-the Gmail, Calendar, and Drive connectors plus this repo's Node scripts.
+the Gmail connector plus this repo's Node scripts. Assistant memory lives as an
+encrypted file (`state.enc`) on the `claude/briefing` branch of this repo — the
+scripts read and write it directly; no Drive connector or Google token is
+involved in memory, and you never copy file contents by hand.
 
 ## CRITICAL RULES
 - **Never draft, suggest, or pre-write any reply or response.** No suggested
@@ -32,21 +35,7 @@ the Gmail, Calendar, and Drive connectors plus this repo's Node scripts.
   ("assessed as…", "likely…"). If data is missing (stale texts, failed scan),
   state it in the bottom line.
 
-## STEP 1 — Load memory (Drive connector)
-Memory lives in Drive as files titled `ben-assistant-state.json`; each run
-writes a fresh copy, so always load the NEWEST:
-1. `search_files` for `title = 'ben-assistant-state.json'`, pick the most
-   recent `modifiedTime`. Remember its `parentId` for STEP 7.
-2. `download_file_content` → save to `/tmp/connector-state.json`.
-3. Apply any pending actions in place (`ignore_conversation`,
-   `snooze_conversation`, `mark_done`, `mark_important`, `note`). Clear pending
-   actions only after STEP 7 succeeds.
-
-`state.storylines` is the continuing-coverage file: per-item running memory of
-status, commitments, and recent history. You wrote it yesterday; today's brief
-continues it.
-
-## STEP 2 — Read the personal mailbox (Gmail connector)
+## STEP 1 — Read the personal mailbox (Gmail connector)
 1. `search_threads` scoped to the personal address (so you don't re-pull
    Workspace mail this mailbox also sees):
    - `(to:bendavis354@gmail.com OR deliveredto:bendavis354@gmail.com OR from:bendavis354@gmail.com) newer_than:2d`
@@ -57,12 +46,15 @@ continues it.
    `/tmp/connector-personal-messages.json`. If the connector is unavailable,
    write an empty `messages` array, continue, and note the gap in the brief.
 
-## STEP 3 — Gather facts (Node)
+## STEP 2 — Gather facts (Node)
 ```bash
-CONNECTOR_STATE_FILE=/tmp/connector-state.json \
 CONNECTOR_MESSAGES_FILE=/tmp/connector-personal-messages.json \
 node src/run-full-briefing.mjs
 ```
+This loads memory automatically (decrypting `state.enc` from `claude/briefing`)
+and writes a readable copy to `/tmp/current-state.json` for your analysis.
+`state.storylines` there is your continuing-coverage memory — you wrote it
+yesterday; today's brief continues it.
 Scans Workspace mailboxes over OAuth, merges personal connector mail, dedupes
 across accounts, scans calendars, loads texts, writes `briefing.json` and the
 state payloads. That produces the FACTS; your analysis comes next.
@@ -72,9 +64,9 @@ This step makes many Gmail API calls and can take a few minutes. Run it with a
 if it fails, read the error output first; every network call has a 30s timeout,
 so a genuine failure reports itself rather than hanging.
 
-## STEP 4 — Analyze, then write the brief
-Read `briefing.json` and `/tmp/connector-state.json` together, plus the
-personal thread bodies from STEP 2.
+## STEP 3 — Analyze, then write the brief
+Read `briefing.json` and `/tmp/current-state.json` together, plus the
+personal thread bodies from STEP 1.
 
 BEFORE WRITING (do not output this part):
 - Select the 3–6 items that actually matter. Rank by stakes + momentum + what
@@ -160,26 +152,20 @@ Then merge (it validates and reports exactly what to fix if invalid):
 node src/merge-narrative.mjs /tmp/brief.json
 ```
 
-## STEP 5 — Build
+## STEP 4 — Build
 ```bash
 npm install   # if node_modules missing
 npm run build # validates schema, renders the document, encrypts to index.html
 ```
 If the build fails, fix the brief and retry. Never deploy a broken page.
 
-## STEP 6 — Deploy
-Commit root `index.html` + `.nojekyll` to `claude/briefing` and push. Never `main`.
+## STEP 5 — Persist memory and deploy (one command each)
+```bash
+node src/run-state-update.mjs   # merges the run into memory, writes encrypted state.enc
+node src/deploy-briefing.mjs    # commits index.html + .nojekyll + state.enc to claude/briefing and pushes
+```
+That single push publishes the briefing AND persists memory. Never push to
+`main`. Do not hand-copy any state content — the scripts own the bytes.
 
-## STEP 7 — Persist memory (Drive connector)
-1. ```bash
-   CONNECTOR_STATE_FILE=/tmp/connector-state.json node src/run-state-update.mjs
-   ```
-   Merges conversations AND item memories into `/tmp/next-state.json`
-   (storylines keep a rolling 7-entry history per item).
-2. Upload `/tmp/next-state.json` via the Drive connector `create_file`:
-   `title` = `ben-assistant-state.json`, `contentMimeType` = `application/json`,
-   `disableConversionToGoogleType` = true, `parentId` = folder from STEP 1.
-3. Only after the upload succeeds, clear pending actions.
-
-Tomorrow's edition opens `storylines` and resumes coverage of every item
-mid-course. Write memory entries accordingly.
+Tomorrow's edition decrypts `state.enc`, opens `storylines`, and resumes
+coverage of every item mid-course. Write memory entries accordingly.

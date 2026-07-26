@@ -7,3 +7,4 @@ briefing.json
 mac/__pycache__/
 mac/config.json
 .config/
+state.enc
