@@ -36,10 +36,12 @@ involved in memory, and you never copy file contents by hand.
   state it in the bottom line.
 
 ## STEP 1 — Read the personal mailbox (Gmail connector)
-1. `search_threads` scoped to the personal address (so you don't re-pull
-   Workspace mail this mailbox also sees):
-   - `(to:bendavis354@gmail.com OR deliveredto:bendavis354@gmail.com OR from:bendavis354@gmail.com) newer_than:2d`
-   - `in:sent from:bendavis354@gmail.com newer_than:14d`
+1. `search_threads` across the WHOLE mailbox — it is Ben's unified mailbox and
+   also carries Biodynamics/Heartspring traffic; the pipeline dedupes overlap
+   with the Workspace scans, and personal-mailbox thread ids are what make
+   Open-thread links work in Ben's browser:
+   - `newer_than:2d`
+   - `in:sent newer_than:14d`
 2. `get_thread` the substantive ones; normalize each message to
    `{ id, threadId, sender, toRecipients, ccRecipients, subject, snippet, date, labelIds }`.
 3. Write `{ "sourceAccount": "bendavis354@gmail.com", "messages": [...] }` to
@@ -141,8 +143,15 @@ should not simply restate them. Threads you raise as priority items are
 cross-referenced there automatically; set `conversationKeys` on every item so
 that cross-reference resolves.
 
-Style: neutral, declarative, compact — a professional briefing document. No
-first-person chattiness, no exclamation points, no drafted replies anywhere.
+Style: neutral, declarative, TERSE — a briefing, not prose. Hard brevity rules:
+- `bottomLine` ≤ 2 sentences. `keyPoints` ≤ 4 bullets, ≤ 14 words each.
+- Per item: `background` ≤ 1 sentence and ONLY when it changes what Ben does;
+  `development` 1 sentence; `assessment` ≤ 1 sentence and only if it adds
+  something `development` doesn't; `action` imperative, ≤ 10 words.
+- `otherDevelopments` text ≤ 12 words each.
+- Cut filler ("currently", "in order to", "it appears that"). Sentence
+  fragments are acceptable. Every word must earn its place.
+No first-person chattiness, no exclamation points, no drafted replies anywhere.
 `calendarSuggestion` only when a message clearly proposes a concrete
 time/meeting. Reuse item `id`s from `storylines` when continuing coverage;
 new items get new slugs. 3–6 items, max 12 other developments.

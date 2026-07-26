@@ -72,6 +72,12 @@ function acctTag(email) {
   return `<span class="tag ${cls}">${esc(label)}</span>`;
 }
 
+// Calendar links open in Ben's personal Google account: authuser pins the
+// account so "Add to calendar" always lands on his own calendar.
+const PERSONAL_ACCOUNT = (briefing.accounts || []).find(a =>
+  String(a.type || '').toLowerCase() === 'personal' || String(a.email || '').includes('gmail')
+)?.email || '';
+
 // ── status designators ───────────────────────────────────────────────────────
 const STATUS = {
   action_required: { label: 'ACTION REQUIRED', cls: 'st-action' },
@@ -92,6 +98,7 @@ function threadLink(account, threadId) {
 }
 function calendarTemplateLink({ title, start, end, details, location }) {
   const p = new URLSearchParams({ action: 'TEMPLATE', text: title || 'New event' });
+  if (PERSONAL_ACCOUNT) p.set('authuser', PERSONAL_ACCOUNT);
   const s = calStamp(start);
   const e = calStamp(end) || s;
   if (s) p.set('dates', `${s}/${e}`);
@@ -205,7 +212,7 @@ function actionItems() {
   return `
   <section class="doc-sec">
     <h2 class="sec-label">3. Action items — <span id="task-open-count">${open.length}</span> open</h2>
-    <p class="sec-note">Items remain until checked off. Items answered by an email reply are checked automatically. <button type="button" class="link-btn" id="task-toggle" onclick="toggleCompleted()">Show completed</button></p>
+    <p class="sec-note">Checked items clear; your email replies check items automatically. <button type="button" class="link-btn" id="task-toggle" onclick="toggleCompleted()">Show completed</button></p>
     <ul class="tasks hide-done" id="task-list">
       ${open.map(taskRow).join('')}
       ${done.length ? `<li class="tasks-subhead">Recently completed</li>${done.map(completedRow).join('')}` : ''}
@@ -307,7 +314,7 @@ function responseQueue() {
   return `
   <section class="doc-sec">
     <h2 class="sec-label">4. Correspondence requiring response — ${rows.length} thread${rows.length === 1 ? '' : 's'}</h2>
-    <p class="sec-note">Complete list of threads awaiting a reply, oldest first. Newsletters and unsolicited mail excluded.</p>
+    <p class="sec-note">All threads awaiting your reply, oldest first.</p>
     <ul class="queue">${rows.map(queueRow).join('')}</ul>
   </section>`;
 }
@@ -473,8 +480,8 @@ function docFooter() {
   const tracked = brief?.items?.length || 0;
   return `
   <footer>
-    <div>Basis: ${s.emailsScanned ?? 0} messages, ${(briefing.accounts || []).length} accounts · ${tracked} items under continuing coverage · generated ${esc(fmtTime(meta.generatedAt))} ET</div>
-    <div>No automated actions are taken on this account. All links open the source thread or calendar for review.</div>
+    <div>${s.emailsScanned ?? 0} messages · ${(briefing.accounts || []).length} accounts · ${tracked} items in coverage · ${esc(fmtTime(meta.generatedAt))} ET</div>
+    <div>Nothing is sent or scheduled automatically; links open Gmail or Calendar for review.</div>
   </footer>`;
 }
 
@@ -707,6 +714,8 @@ function updateCalLink(id) {
   var end = new Date(start.getTime() + 30 * 60000);
   function stamp(d) { return d.toISOString().replace(/[-:]/g, '').replace(/\\.\\d{3}Z$/, 'Z'); }
   var p = new URLSearchParams({ action: 'TEMPLATE', text: link.getAttribute('data-title') || 'New event' });
+  var au = new URL(link.href).searchParams.get('authuser');
+  if (au) p.set('authuser', au);
   p.set('dates', stamp(start) + '/' + stamp(end));
   var details = link.getAttribute('data-details'); if (details) p.set('details', details);
   var loc = link.getAttribute('data-location'); if (loc) p.set('location', loc);

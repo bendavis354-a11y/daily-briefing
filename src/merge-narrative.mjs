@@ -32,7 +32,12 @@ try {
 
 // ── Structural validation (friendly errors for the agent) ────────────────────
 if (!brief.bottomLine || typeof brief.bottomLine !== 'string') fail('missing "bottomLine" (1–3 sentence BLUF)');
-if (brief.bottomLine.length > 400) fail('"bottomLine" over 400 chars — this is a BLUF, tighten it');
+if (brief.bottomLine.length > 320) fail('"bottomLine" over 320 chars — this is a BLUF, tighten it');
+for (const [i, it] of brief.items.entries()) {
+  for (const [f, cap] of [['background', 220], ['development', 220], ['assessment', 220], ['action', 90]]) {
+    if (it[f] && it[f].length > cap) console.warn(`WARN items[${i}].${f} is ${it[f].length} chars (cap ~${cap}) — tighten`);
+  }
+}
 if (brief.keyPoints && (!Array.isArray(brief.keyPoints) || brief.keyPoints.length > 5)) fail('"keyPoints" must be an array of at most 5 strings');
 if (!Array.isArray(brief.items) || brief.items.length === 0) fail('"items" must be a non-empty array (3–6 priority items)');
 if (brief.items.length > 6) fail(`${brief.items.length} items — cap is 6; demote the extras to otherDevelopments`);
