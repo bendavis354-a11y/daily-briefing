@@ -5,7 +5,8 @@
 
 import fs from 'node:fs';
 import { getAccessToken } from './google-auth.mjs';
-import { readState, emptyState } from './drive-state.mjs';
+import { emptyState } from './drive-state.mjs';
+import { loadDurableState } from './state-store.mjs';
 import { scanConfiguredMailboxes, loadConnectorMessages } from './gmail-api.mjs';
 import { dedupeMessages, groupConversations } from './continuity.mjs';
 import { pickDriveAccount, isConnectorAccount } from './accounts.mjs';
@@ -75,29 +76,27 @@ const liveUrl = process.env.GITHUB_PAGES_URL || '';
 if (!clientId || !clientSecret) throw new Error('Missing GOOGLE_OAUTH_CLIENT_ID or GOOGLE_OAUTH_CLIENT_SECRET');
 if (!accounts.length) throw new Error('GMAIL_ACCOUNTS_JSON is empty');
 
-// ── STEP 2: Load Drive state ──────────────────────────────────────────────────
-// State I/O rides a durable Workspace account (never the weekly-expiring
-// consumer token). The agent can also hand in a connector-read copy of the state
-// file via CONNECTOR_STATE_FILE, which is used in preference to a direct read.
-console.log('STEP 2: Loading Drive state…');
-const driveAccount = pickDriveAccount(accounts);
-const driveRefreshToken = process.env[driveAccount.refreshTokenEnv];
-const driveToken = await getAccessToken({ clientId, clientSecret, refreshToken: driveRefreshToken });
-console.log(`Drive account: ${driveAccount.email}`);
-
+// ── STEP 2: Load durable state ────────────────────────────────────────────────
+// Memory lives encrypted in the repo (state.enc on claude/briefing) — no Google
+// token or connector involved. See state-store.mjs for the precedence order.
+console.log('STEP 2: Loading state…');
 let assistantState;
-const connectorStateFile = process.env.CONNECTOR_STATE_FILE;
 try {
-  if (connectorStateFile) {
-    assistantState = JSON.parse(fs.readFileSync(connectorStateFile, 'utf8'));
-    console.log(`Drive state loaded from connector file (version=${assistantState.version}, updatedAt=${assistantState.updatedAt})`);
-  } else {
-    assistantState = await readState({ accessToken: driveToken, fileId: driveFileId });
-    console.log(`Drive state loaded (version=${assistantState.version}, updatedAt=${assistantState.updatedAt})`);
-  }
+  assistantState = loadDurableState();
 } catch (err) {
-  console.error('ERROR loading Drive state:', err.message);
+  console.error('ERROR loading state:', err.message);
   process.exit(1);
+}
+// Plaintext copy for the agent's analysis step (storylines, patterns, tasks).
+fs.writeFileSync('/tmp/current-state.json', JSON.stringify(assistantState, null, 2));
+
+// A Drive token is still used (best-effort) for the iMessage export read only.
+let driveToken = null;
+try {
+  const driveAccount = pickDriveAccount(accounts);
+  driveToken = await getAccessToken({ clientId, clientSecret, refreshToken: process.env[driveAccount.refreshTokenEnv] });
+} catch (err) {
+  console.warn(`Drive token unavailable (${err.message}) — continuing without iMessage export`);
 }
 
 const priorConvos = assistantState.conversations || {};
@@ -113,7 +112,7 @@ console.log('STEP 2B: Loading iMessage export…');
 let imessageData = null;
 let imessageStatus = 'missing';
 
-if (driveImessageFileId) {
+if (driveImessageFileId && driveToken) {
   try {
     const res = await fetch(
       `https://www.googleapis.com/drive/v3/files/${driveImessageFileId}?alt=media`,
