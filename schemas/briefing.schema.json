@@ -75,6 +75,80 @@
         "newsletter": { "type": "array" },
         "spam": { "type": "array" }
       }
+    },
+    "brief": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["bottomLine", "items"],
+      "properties": {
+        "bottomLine": { "type": "string", "maxLength": 400 },
+        "keyPoints": {
+          "type": "array",
+          "maxItems": 5,
+          "items": { "type": "string" }
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["id", "title", "development", "status"],
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string", "maxLength": 120 },
+              "account": { "type": "string" },
+              "priority": { "type": "number" },
+              "status": { "type": "string", "enum": ["action_required", "awaiting_reply", "monitoring", "new", "resolved"] },
+              "background": { "type": "string" },
+              "development": { "type": "string" },
+              "assessment": { "type": "string" },
+              "action": { "type": "string" },
+              "due": { "type": "string" },
+              "conversationKeys": { "type": "array", "items": { "type": "string" } },
+              "viewThreadAccount": { "type": "string" },
+              "viewThreadId": { "type": "string" },
+              "calendarSuggestion": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["title"],
+                "properties": {
+                  "title": { "type": "string" },
+                  "start": { "type": "string" },
+                  "end": { "type": "string" },
+                  "details": { "type": "string" },
+                  "location": { "type": "string" }
+                }
+              },
+              "memory": { "type": "string" }
+            }
+          }
+        },
+        "otherDevelopments": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["text"],
+            "properties": {
+              "text": { "type": "string" },
+              "account": { "type": "string" },
+              "source": { "type": "string" },
+              "viewThreadAccount": { "type": "string" },
+              "viewThreadId": { "type": "string" }
+            }
+          }
+        },
+        "routineTraffic": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "count": { "type": "number" },
+            "note": { "type": "string" }
+          }
+        }
+      }
     }
   }
 }
