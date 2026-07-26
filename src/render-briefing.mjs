@@ -191,18 +191,47 @@ function priorityItems() {
 function actionItems() {
   const todos = sections.todos || [];
   if (!todos.length) return '';
-  const rows = [...todos].sort((a, b) => {
+  const byPriThenAge = (a, b) => {
     const rank = { high: 0, medium: 1, low: 2 };
     const d = (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1);
     if (d) return d;
     return String(a.addedAt || '').localeCompare(String(b.addedAt || ''));
-  });
+  };
+  const open = todos.filter(t => t.status !== 'completed').sort(byPriThenAge);
+  // Auto-completed by a detected reply; linger on the page for one day so Ben
+  // sees the system registered his response.
+  const done = todos.filter(t => t.status === 'completed')
+    .sort((a, b) => String(b.completedAt || '').localeCompare(String(a.completedAt || '')));
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">3. Action items — <span id="task-open-count">${rows.length}</span> open</h2>
-    <p class="sec-note">Items remain until checked off. <button type="button" class="link-btn" id="task-toggle" onclick="toggleCompleted()">Show completed</button></p>
-    <ul class="tasks hide-done" id="task-list">${rows.map(taskRow).join('')}</ul>
+    <h2 class="sec-label">3. Action items — <span id="task-open-count">${open.length}</span> open</h2>
+    <p class="sec-note">Items remain until checked off. Items answered by an email reply are checked automatically. <button type="button" class="link-btn" id="task-toggle" onclick="toggleCompleted()">Show completed</button></p>
+    <ul class="tasks hide-done" id="task-list">
+      ${open.map(taskRow).join('')}
+      ${done.length ? `<li class="tasks-subhead">Recently completed</li>${done.map(completedRow).join('')}` : ''}
+    </ul>
   </section>`;
+}
+
+function completedRow(t, i) {
+  const id = t.id || `ctask-${i}`;
+  const when = t.completedAt ? fmtDay(t.completedAt) : '';
+  const note = t.completedBy === 'reply'
+    ? `Completed — your reply${when ? ` on ${when}` : ''} closed this out`
+    : `Completed${when ? ` ${when}` : ''}`;
+  return `<li class="task done auto" data-account="${escAttr((t.account || '').toLowerCase())}" data-task-id="${escAttr(id)}">
+    <input type="checkbox" class="t-check" checked disabled>
+    <span class="t-label">
+      <span class="t-text">${esc(t.text || '')}</span>
+      <span class="t-sub">${esc([t.account ? acct(t.account).label : '', note].filter(Boolean).join(' · '))}</span>
+    </span>
+  </li>`;
+}
+
+function fmtDay(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return new Intl.DateTimeFormat('en-US', { timeZone: TZ, month: 'short', day: 'numeric' }).format(d);
 }
 
 function taskRow(t, i) {
@@ -621,7 +650,9 @@ button.filter-btn.active { outline:2px solid var(--ink); outline-offset:1px; }
 
 .tasks { list-style:none; }
 .tasks li.task { display:flex; align-items:flex-start; gap:11px; padding:9px 0; border-bottom:1px dotted var(--rule-light); }
-.tasks.hide-done li.task.done { display:none; }
+.tasks.hide-done li.task.done:not(.auto) { display:none; }
+.tasks-subhead { font-family:Helvetica,Arial,sans-serif; font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); padding:14px 0 4px; border-bottom:1px dotted var(--rule-light); list-style:none; }
+.task.auto .t-check { cursor:default; }
 .t-check { width:17px; height:17px; margin-top:2px; flex:none; accent-color:var(--hs, #2F5D3A); cursor:pointer; }
 .t-label { flex:1; cursor:pointer; display:block; }
 .t-pri { font-family:Helvetica,Arial,sans-serif; font-size:9.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; margin-right:7px; }
@@ -722,6 +753,7 @@ function refreshTaskCount() {
 function restoreTasks() {
   var done = loadDoneTasks();
   document.querySelectorAll('.task').forEach(function (row) {
+    if (row.classList.contains('auto')) return; // completed server-side; not toggleable
     var id = row.getAttribute('data-task-id');
     if (!done[id]) return;
     row.classList.add('done');

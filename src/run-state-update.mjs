@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import { getAccessToken } from './google-auth.mjs';
 import { readState, writeState } from './drive-state.mjs';
 import { pickDriveAccount } from './accounts.mjs';
+import { retainTasks, updatePatterns } from './tasks.mjs';
 
 const now = new Date();
 const accounts = JSON.parse(process.env.GMAIL_ACCOUNTS_JSON || '[]');
@@ -92,33 +93,43 @@ for (const arc of updateData.arcs || []) {
   }
 }
 
-// Build open action items. These accumulate rather than being replaced: an item
-// stays in memory until it is completed, so it keeps appearing in the briefing
-// across days. Original `addedAt` is preserved so the page can show how long an
-// item has been outstanding. Items are aged out after 45 days to bound growth.
-const TASK_CUTOFF_MS = 45 * 24 * 3600 * 1000;
+// Build the action-item set. Items accumulate rather than being replaced: an
+// item stays in memory until completed, so it keeps appearing in the briefing
+// across days. Completion state from the gather step (auto-completed when the
+// sent-mail scan shows Ben replied) is preserved; completed items linger one
+// day past detection, open items age out after 45 days (retainTasks).
 const tasksById = new Map();
 for (const prior of currentState.openTasks || []) {
-  if (!prior.id) continue;
-  const added = Date.parse(prior.addedAt || 0);
-  if (added && now - added > TASK_CUTOFF_MS) continue;
-  tasksById.set(prior.id, prior);
+  if (prior.id) tasksById.set(prior.id, prior);
 }
 for (const t of updateData.todos || []) {
   const id = t.id || `task-${t.account || ''}-${t.text || ''}`;
   const prior = tasksById.get(id);
   tasksById.set(id, {
     id,
-    text: t.text,
-    priority: t.priority,
+    text: t.text || prior?.text || '',
+    priority: t.priority || prior?.priority || 'medium',
     account: t.account || prior?.account || '',
     conversationKey: t.conversationKey || prior?.conversationKey || '',
     origin: t.origin || prior?.origin || 'email',
-    addedAt: prior?.addedAt || now.toISOString(),
-    lastSeenAt: now.toISOString()
+    addedAt: t.addedAt || prior?.addedAt || now.toISOString(),
+    lastSeenAt: now.toISOString(),
+    ...(t.status === 'completed' || prior?.status === 'completed'
+      ? {
+          status: 'completed',
+          completedAt: t.completedAt || prior?.completedAt,
+          completedBy: t.completedBy || prior?.completedBy || 'reply',
+          detectedAt: t.detectedAt || prior?.detectedAt
+        }
+      : {})
   });
 }
-const openTasks = [...tasksById.values()].slice(0, 60);
+const openTasks = retainTasks([...tasksById.values()], now);
+
+// Fold observed Ben-replies into the per-correspondent habit profile. The
+// lastReplyAt guard inside updatePatterns keeps re-observed replies (sent mail
+// stays in the scan window for 14 days) from double-counting.
+const patterns = updatePatterns(currentState.patterns, updateData.replyObservations || [], now);
 
 // Build recent runs (keep last 14)
 const thisRun = {
@@ -136,6 +147,7 @@ const updatedState = {
   conversations: newConversations,
   storylines,
   openTasks,
+  patterns,
   recentRuns
 };
 

@@ -163,6 +163,19 @@
         "status": "open",
         "origin": "email",
         "addedAt": "2026-07-24T00:24:06.188156"
+      },
+      {
+        "id": "todo-<supp@x>",
+        "conversationKey": "<supp@x>",
+        "account": "ben@heartspringgardens.org",
+        "priority": "medium",
+        "text": "Chase Supplier Desk for the revised quote",
+        "status": "completed",
+        "origin": "email",
+        "addedAt": "2026-07-23T00:33:15.787963",
+        "completedAt": "2026-07-25T22:33:15.787963",
+        "completedBy": "reply",
+        "detectedAt": "2026-07-26T00:33:15.787963"
       }
     ],
     "business": [

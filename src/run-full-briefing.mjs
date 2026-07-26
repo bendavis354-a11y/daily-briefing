@@ -9,6 +9,7 @@ import { readState, emptyState } from './drive-state.mjs';
 import { scanConfiguredMailboxes, loadConnectorMessages } from './gmail-api.mjs';
 import { dedupeMessages, groupConversations } from './continuity.mjs';
 import { pickDriveAccount, isConnectorAccount } from './accounts.mjs';
+import { carryForwardTasks, applyReplyCompletions, retainTasks, extractReplyObservations } from './tasks.mjs';
 import { listTomorrowEventsForAccount, listCalendars, listEvents } from './calendar-api.mjs';
 
 // ── STEP 1: Dates ─────────────────────────────────────────────────────────────
@@ -606,21 +607,23 @@ if (imessageData && imessageStatus !== 'missing') {
 
 console.log(`iMessages: scanned=${imessagesScanned}, actionable=${imessagesActionable}`);
 
-// ── STEP 5C: Carry forward open action items ─────────────────────────────────
-// An action item raised on a previous day must keep appearing until it is
-// completed — otherwise it disappears silently once its source message ages out
-// of the scan window. Prior open tasks are merged in ahead of today's, oldest
-// first, so long-outstanding work stays visible.
-const todoIds = new Set(todos.map(t => t.id).filter(Boolean));
-const carried = [];
-for (const prior of assistantState.openTasks || []) {
-  if (!prior.id || todoIds.has(prior.id)) continue;
-  todoIds.add(prior.id);
-  carried.push({ ...prior, carriedForward: true });
-}
-carried.sort((a, b) => String(a.addedAt || '').localeCompare(String(b.addedAt || '')));
-todos.unshift(...carried);
-console.log(`Action items: ${todos.length} total (${carried.length} carried forward from prior runs)`);
+// ── STEP 5C: Action item lifecycle ───────────────────────────────────────────
+// Carry prior tasks forward (open items keep appearing until completed, even
+// after their source message ages out of the scan window), then auto-complete
+// any task whose conversation shows Ben replied after it was raised — the
+// sent-mail scan is the evidence. Auto-completed items linger one day on the
+// page under "Recently completed". Detection uses the full conversation list
+// (pre-ignore/snooze) so a reply on a snoozed thread still completes its task.
+const merged = carryForwardTasks(todos, assistantState.openTasks || []);
+applyReplyCompletions(merged, conversations, now);
+todos.length = 0;
+todos.push(...retainTasks(merged, now));
+const completedNow = todos.filter(t => t.status === 'completed').length;
+console.log(`Action items: ${todos.length} total, ${completedNow} auto-completed by replies`);
+
+// Observed Ben-replies (correspondent + latency) for the habit profile.
+const replyObservations = extractReplyObservations(conversations);
+console.log(`Reply observations: ${replyObservations.length}`);
 
 // ── STEP 6: Write briefing.json ───────────────────────────────────────────────
 console.log('STEP 6: Writing briefing.json…');
@@ -694,7 +697,8 @@ const statePayload = {
   })),
   briefing,
   assistantState,
-  imessageStatus
+  imessageStatus,
+  replyObservations
 };
 fs.writeFileSync('/tmp/briefing-state-full.json', JSON.stringify(statePayload, null, 2));
 console.log('State payload written to /tmp/briefing-state-full.json');
@@ -702,7 +706,8 @@ console.log('State payload written to /tmp/briefing-state-full.json');
 // run-state-update.mjs consumes this exact filename and shape (conversations + todos).
 fs.writeFileSync('/tmp/briefing-state-update.json', JSON.stringify({
   conversations: statePayload.conversations,
-  todos
+  todos,
+  replyObservations
 }, null, 2));
 console.log('State update payload written to /tmp/briefing-state-update.json');
 

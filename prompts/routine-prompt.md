@@ -118,10 +118,22 @@ THEN write `/tmp/brief.json`:
 The document carries an **Action items** checklist built from `sections.todos`.
 Open items are carried forward from `state.openTasks` on every run, so an item
 raised days ago keeps appearing until it is completed — it does not vanish when
-its source message ages out of the scan window. Ben checks items off in the page
-itself; completion is recorded in his browser, so the routine does not see it.
-Do not re-list action items in `otherDevelopments`. Items age out of state after
-45 days.
+its source message ages out of the scan window. Completion happens two ways:
+Ben checks items off in the page (browser-side; the routine does not see it),
+and the pipeline **auto-completes** any item whose conversation shows Ben
+replied after the item was raised — the sent-mail scan is the evidence. Auto-
+completed items appear under "Recently completed" for one day, then purge.
+Do not re-list action items in `otherDevelopments`, and do not raise items for
+threads whose latest message is from Ben. Items age out of state after 45 days.
+
+`state.patterns.correspondents` is Ben's observed reply-habit profile, built
+automatically from his sent mail: per correspondent, how many replies have been
+observed, his average reply latency, and when he last answered them. Use it as
+analysis context — it turns raw silence into signal. Examples: a thread sitting
+4 days with a correspondent Ben normally answers within a day is reportable
+("outstanding 4 days; Ben typically replies to Krebs within a day"); a slow
+reply to a low-priority list is not. Never present pattern-derived inferences
+as fact — they are assessments.
 
 The document also carries a **Correspondence requiring response** section that
 the renderer builds automatically: every thread whose latest message awaits a
