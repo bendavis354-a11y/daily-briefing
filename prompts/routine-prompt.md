@@ -115,6 +115,15 @@ THEN write `/tmp/brief.json`:
 }
 ```
 
+The document also carries a **Correspondence requiring response** section that
+the renderer builds automatically: every thread whose latest message awaits a
+reply from Ben, oldest first, newsletters and unsolicited mail excluded. It is
+exhaustive by construction, so nothing Ben owes a response to can be lost —
+you do not need to enumerate those threads yourself, and `otherDevelopments`
+should not simply restate them. Threads you raise as priority items are
+cross-referenced there automatically; set `conversationKeys` on every item so
+that cross-reference resolves.
+
 Style: neutral, declarative, compact — a professional briefing document. No
 first-person chattiness, no exclamation points, no drafted replies anywhere.
 `calendarSuggestion` only when a message clearly proposes a concrete

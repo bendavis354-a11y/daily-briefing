@@ -6,14 +6,17 @@
  * upcoming decision) and BLUF memo structure (bottom line first, compressed
  * background, supporting detail relegated to an appendix):
  *
- *   1. BOTTOM LINE        — 1–3 sentence BLUF
- *   2. KEY POINTS         — up to 5 scannable bullets
- *   3. PRIORITY ITEMS     — numbered; Background / Development / Assessment /
- *                           Action; status + account designators; thread link
- *   4. SCHEDULE           — tomorrow's commitments, proposed calendar entries
+ *   1. BOTTOM LINE   — 1–3 sentence BLUF plus key points
+ *   2. PRIORITY ITEMS — numbered; Background / Development / Assessment /
+ *                       Action; status + account designators; thread link
+ *   3. CORRESPONDENCE REQUIRING RESPONSE — exhaustive list of threads awaiting
+ *                       a reply, oldest first; derived from the scan (not from
+ *                       the analysis step) so nothing can be dropped by
+ *                       editorial judgment; newsletters and spam excluded
+ *   4. SCHEDULE      — tomorrow's commitments, proposed calendar entries
  *   5. OTHER DEVELOPMENTS — one-line items
- *   6. ROUTINE TRAFFIC    — one-line disposition of the compressed mass
- *   Appendix              — full categorized traffic, collapsed
+ *   6. ROUTINE TRAFFIC — one-line disposition of the compressed mass
+ *   Appendix         — full categorized traffic, collapsed
  *
  * No reply drafting anywhere: every item links to the source thread; Ben
  * composes his own responses. Reads briefing.json (facts + `brief` written by
@@ -139,15 +142,94 @@ function bottomLine() {
   </section>`;
 }
 
+// Priority items in presentation order, plus a lookup from conversation key to
+// the item number they appear as — so the response queue can cross-reference
+// rather than silently repeat them.
+const orderedItems = [...((brief || fallbackBrief()).items || [])]
+  .sort((x, y) => (y.priority || 3) - (x.priority || 3));
+const itemNumberByKey = new Map();
+orderedItems.forEach((item, i) => {
+  for (const key of item.conversationKeys || []) itemNumberByKey.set(key, i + 1);
+});
+
 function priorityItems() {
-  const b = brief || fallbackBrief();
-  const items = [...(b.items || [])].sort((x, y) => (y.priority || 3) - (x.priority || 3));
-  if (!items.length) return '';
+  if (!orderedItems.length) return '';
   return `
   <section class="doc-sec">
     <h2 class="sec-label">2. Priority items</h2>
-    <ol class="items">${items.map(itemBlock).join('')}</ol>
+    <ol class="items">${orderedItems.map(itemBlock).join('')}</ol>
   </section>`;
+}
+
+/**
+ * Complete list of correspondence awaiting a reply from Ben.
+ *
+ * Derived from the scan rather than from the analysis step, so it is exhaustive
+ * by construction — no thread can be dropped by editorial judgment. Draws only
+ * from the substantive categories (urgent, business, personal, financial);
+ * newsletters and spam are excluded by construction. Ordered oldest-first, so
+ * the threads that have been waiting longest surface at the top.
+ */
+function responseQueue() {
+  const pools = [sections.urgent, sections.business, sections.personal, sections.financial];
+  const seen = new Set();
+  const rows = [];
+  for (const list of pools) {
+    for (const it of list || []) {
+      if (it.status !== 'waiting_on_ben') continue;
+      const key = it.conversationKey || `${it.sender || ''}|${it.subject || ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ ...it, _key: key, _ts: Date.parse(it.date || '') || null });
+    }
+  }
+  if (!rows.length) {
+    return `
+  <section class="doc-sec">
+    <h2 class="sec-label">3. Correspondence requiring response</h2>
+    <p class="none">No threads are currently awaiting a reply.</p>
+  </section>`;
+  }
+
+  rows.sort((a, b) => {
+    if (a._ts && b._ts) return a._ts - b._ts;
+    if (a._ts) return -1;
+    if (b._ts) return 1;
+    return 0;
+  });
+
+  return `
+  <section class="doc-sec">
+    <h2 class="sec-label">3. Correspondence requiring response — ${rows.length} thread${rows.length === 1 ? '' : 's'}</h2>
+    <p class="sec-note">Complete list of threads awaiting a reply, oldest first. Newsletters and unsolicited mail excluded.</p>
+    <ul class="queue">${rows.map(queueRow).join('')}</ul>
+  </section>`;
+}
+
+function queueRow(r) {
+  const href = threadLink(r.viewThreadAccount || r.account, r.viewThreadId || r.gmailThreadId);
+  const num = itemNumberByKey.get(r._key);
+  const age = waitingLabel(r._ts);
+  return `<li data-account="${escAttr((r.account || '').toLowerCase())}">
+    <div class="q-main">
+      ${acctTag(r.account)}
+      <span class="q-sender">${esc(r.senderName || r.sender || 'Unknown sender')}</span>
+      <span class="q-subject">${esc(r.subject || '(no subject)')}</span>
+    </div>
+    <div class="q-meta">
+      ${num ? `<span class="q-ref">See item ${num}</span>` : ''}
+      ${age ? `<span class="q-age">${esc(age)}</span>` : ''}
+      ${href ? extA(href, 'doc-link', 'Open thread →') : ''}
+    </div>
+  </li>`;
+}
+
+function waitingLabel(ts) {
+  if (!ts) return '';
+  const days = Math.floor((Date.now() - ts) / 86400000);
+  if (days <= 0) return 'today';
+  if (days === 1) return '1 day';
+  return `${days} days`;
 }
 
 function itemBlock(item) {
@@ -190,7 +272,7 @@ function schedule() {
   if (!tomorrow.length && !week.length && !proposals.length) return '';
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">3. Schedule — ${esc(meta.tomorrowLabel || 'tomorrow')}</h2>
+    <h2 class="sec-label">4. Schedule — ${esc(meta.tomorrowLabel || 'tomorrow')}</h2>
     <div id="tomorrow-schedule" class="sched">
       ${tomorrow.length ? tomorrow.map(eventRow).join('') : '<p class="none">No commitments scheduled.</p>'}
     </div>
@@ -233,7 +315,7 @@ function otherDevelopments() {
   if (!list.length) return '';
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">4. Other developments</h2>
+    <h2 class="sec-label">5. Other developments</h2>
     <ul class="devs">
       ${list.map(d => {
         const href = d.viewThreadId ? threadLink(d.viewThreadAccount || d.account, d.viewThreadId) : '';
@@ -249,7 +331,7 @@ function routineTraffic() {
   if (!count && !rt?.note) return '';
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">5. Routine traffic</h2>
+    <h2 class="sec-label">6. Routine traffic</h2>
     <p class="routine">${count} lower-priority messages processed${rt?.note ? ` — ${esc(rt.note)}` : '.'}</p>
   </section>`;
 }
@@ -338,6 +420,7 @@ const html = `<!DOCTYPE html>
     ${filterBar()}
     ${bottomLine()}
     ${priorityItems()}
+    ${responseQueue()}
     ${schedule()}
     ${otherDevelopments()}
     ${routineTraffic()}
@@ -454,6 +537,16 @@ button.filter-btn.active { outline:2px solid var(--ink); outline-offset:1px; }
 .proposal-line { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
 .proposal-controls { display:flex; gap:14px; margin-top:7px; align-items:center; flex-wrap:wrap; }
 .proposal-controls input { font-family:Helvetica,Arial,sans-serif; font-size:12.5px; padding:4px 7px; border:1px solid var(--rule); background:var(--paper); color:var(--ink); }
+
+.sec-note { font-size:12.5px; color:var(--muted); font-style:italic; margin:-6px 0 10px; }
+.queue { list-style:none; }
+.queue li { display:flex; justify-content:space-between; align-items:baseline; gap:16px; padding:8px 0; border-bottom:1px dotted var(--rule-light); flex-wrap:wrap; }
+.q-main { display:flex; align-items:baseline; gap:8px; flex:1; min-width:260px; flex-wrap:wrap; }
+.q-sender { font-weight:700; font-size:14px; }
+.q-subject { font-size:14px; color:var(--muted); }
+.q-meta { display:flex; align-items:baseline; gap:12px; flex:none; }
+.q-ref { font-family:Helvetica,Arial,sans-serif; font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--action); }
+.q-age { font-family:Helvetica,Arial,sans-serif; font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
 
 .devs { list-style:none; }
 .devs li { padding:7px 0; border-bottom:1px dotted var(--rule-light); font-size:14.5px; }

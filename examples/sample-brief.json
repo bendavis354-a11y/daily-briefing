@@ -3,7 +3,7 @@
   "keyPoints": [
     "Maya Fields requires deposit confirmation by EOD; the spring order proceeds only on confirmation.",
     "Zachary's report confirms $16,670 ABO carryover from FY 25-26; ready for board summary.",
-    "Supplier Desk has not returned the revised quote — second day outstanding.",
+    "Supplier Desk has not returned the revised quote \u2014 second day outstanding.",
     "Ari's dinner question is on its second day without a response.",
     "Tomorrow: greenhouse planning call 9:00 AM, Biodynamics review 3:30 PM."
   ],
@@ -21,25 +21,31 @@
       "due": "today EOD",
       "viewThreadAccount": "ben@heartspringgardens.org",
       "viewThreadId": "18f123sample",
-      "memory": "Deposit confirmation due 7/25 EOD; awaiting Ben's reply. Revised supplier quote still outstanding (day 2). Watch for Maya's shipping confirmation."
+      "memory": "Deposit confirmation due 7/25 EOD; awaiting Ben's reply. Revised supplier quote still outstanding (day 2). Watch for Maya's shipping confirmation.",
+      "conversationKeys": [
+        "<maya@x>"
+      ]
     },
     {
       "id": "bda-abo-funds",
-      "title": "ABO fund carryover — figures settled",
+      "title": "ABO fund carryover \u2014 figures settled",
       "account": "benjamin@biodynamics.com",
       "priority": 3,
       "status": "monitoring",
       "background": "Requested last FY's ABO figures from Zachary Krebs two weeks ago for board allocation planning.",
-      "development": "Report received: $20,000 allocated, $2,730 spent, $600 admin fee — $16,670 carried over.",
+      "development": "Report received: $20,000 allocated, $2,730 spent, $600 admin fee \u2014 $16,670 carried over.",
       "assessment": "Figures are complete and uncontested. Item closes once summarized to the board; no response from Zachary required.",
       "action": "",
       "viewThreadAccount": "benjamin@biodynamics.com",
       "viewThreadId": "18f456sample",
-      "memory": "ABO carryover confirmed at $16,670. Pending: Ben's summary to board, then mark resolved."
+      "memory": "ABO carryover confirmed at $16,670. Pending: Ben's summary to board, then mark resolved.",
+      "conversationKeys": [
+        "<ops@x>"
+      ]
     },
     {
       "id": "personal-ari-dinner",
-      "title": "Dinner scheduling — Ari",
+      "title": "Dinner scheduling \u2014 Ari",
       "account": "bendavis354@gmail.com",
       "priority": 2,
       "status": "action_required",
@@ -48,11 +54,22 @@
       "action": "Reply with a choice of night.",
       "viewThreadAccount": "bendavis354@gmail.com",
       "viewThreadId": "18f789sample",
-      "memory": "Ari awaiting dinner answer (asked 7/24, again 7/25). Calendar favors Thursday."
+      "memory": "Ari awaiting dinner answer (asked 7/24, again 7/25). Calendar favors Thursday.",
+      "conversationKeys": [
+        "<ari@x>"
+      ]
     }
   ],
   "otherDevelopments": [
-    { "text": "Supplier Desk: revised quote still outstanding, day 2.", "account": "ben@heartspringgardens.org", "viewThreadAccount": "ben@heartspringgardens.org", "viewThreadId": "18fwaitsample" }
+    {
+      "text": "Supplier Desk: revised quote still outstanding, day 2.",
+      "account": "ben@heartspringgardens.org",
+      "viewThreadAccount": "ben@heartspringgardens.org",
+      "viewThreadId": "18fwaitsample"
+    }
   ],
-  "routineTraffic": { "count": 2, "note": "one newsletter, one promotion. Local Food Digest carried the market schedule." }
+  "routineTraffic": {
+    "count": 2,
+    "note": "one newsletter, one promotion. Local Food Digest carried the market schedule."
+  }
 }

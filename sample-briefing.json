@@ -16,14 +16,38 @@
     "todos": 2
   },
   "accounts": [
-    { "email": "bendavis354@gmail.com", "label": "Personal", "type": "Personal" },
-    { "email": "ben@heartspringgardens.org", "label": "Heartspring", "type": "Business" },
-    { "email": "benjamin@biodynamics.com", "label": "Biodynamics", "type": "Business" }
+    {
+      "email": "bendavis354@gmail.com",
+      "label": "Personal",
+      "type": "Personal"
+    },
+    {
+      "email": "ben@heartspringgardens.org",
+      "label": "Heartspring",
+      "type": "Business"
+    },
+    {
+      "email": "benjamin@biodynamics.com",
+      "label": "Biodynamics",
+      "type": "Business"
+    }
   ],
   "calendars": [
-    { "id": "primary", "name": "Primary calendar", "color": "#3A7556" },
-    { "id": "heartspring@example.com", "name": "Heartspring Gardens", "color": "#A8843A" },
-    { "id": "biodynamics@example.com", "name": "Biodynamics", "color": "#3D5DAA" }
+    {
+      "id": "primary",
+      "name": "Primary calendar",
+      "color": "#3A7556"
+    },
+    {
+      "id": "heartspring@example.com",
+      "name": "Heartspring Gardens",
+      "color": "#A8843A"
+    },
+    {
+      "id": "biodynamics@example.com",
+      "name": "Biodynamics",
+      "color": "#3D5DAA"
+    }
   ],
   "sections": {
     "urgent": [
@@ -34,7 +58,12 @@
         "subject": "Deposit confirmation needed today",
         "summary": "Maya needs confirmation before end of day so the spring order can proceed.",
         "deadline": "Today",
-        "gmailThreadId": "18f123sample"
+        "gmailThreadId": "18f123sample",
+        "status": "waiting_on_ben",
+        "conversationKey": "<maya@x>",
+        "date": "2026-05-30T12:00:00-04:00",
+        "viewThreadAccount": "ben@heartspringgardens.org",
+        "viewThreadId": "18f123sample"
       }
     ],
     "tomorrowSchedule": [
@@ -101,7 +130,13 @@
         "sender": "Ops Team",
         "subject": "Weekly field notes",
         "summary": "New notes are ready for review before the Monday meeting.",
-        "gmailThreadId": "18f456sample"
+        "gmailThreadId": "18f456sample",
+        "status": "waiting_on_ben",
+        "conversationKey": "<ops@x>",
+        "date": "2026-05-25T12:00:00-04:00",
+        "viewThreadAccount": "benjamin@biodynamics.com",
+        "viewThreadId": "18f456sample",
+        "senderName": "Ops Team"
       }
     ],
     "personal": [
@@ -110,31 +145,57 @@
         "sender": "Ari",
         "subject": "Dinner this week?",
         "summary": "Ari asked whether Wednesday or Thursday works better.",
-        "gmailThreadId": "18f789sample"
+        "gmailThreadId": "18f789sample",
+        "status": "waiting_on_ben",
+        "conversationKey": "<ari@x>",
+        "date": "2026-05-29T12:00:00-04:00",
+        "viewThreadAccount": "bendavis354@gmail.com",
+        "viewThreadId": "18f789sample",
+        "senderName": "Ari"
       }
     ],
-    "financial": [],
+    "financial": [
+      {
+        "account": "benjamin@biodynamics.com",
+        "sender": "Zachary Krebs <zachary@biodynamics.com>",
+        "senderName": "Zachary Krebs",
+        "subject": "Q3 reimbursement paperwork",
+        "summary": "Needs your signature to close the quarter.",
+        "status": "waiting_on_ben",
+        "conversationKey": "<zach@x>",
+        "date": "2026-05-20T12:00:00-04:00",
+        "viewThreadAccount": "benjamin@biodynamics.com",
+        "viewThreadId": "18ffinsample"
+      }
+    ],
     "waiting": [
       {
         "account": "ben@heartspringgardens.org",
         "sender": "Supplier Desk",
         "subject": "Re: revised quote",
         "summary": "Ben replied yesterday; waiting for their revised numbers.",
-        "gmailThreadId": "18fwaitsample"
+        "gmailThreadId": "18fwaitsample",
+        "status": "waiting_on_other",
+        "conversationKey": "<supp@x>",
+        "date": "2026-05-29T12:00:00-04:00"
       }
     ],
     "newsletter": [
       {
         "account": "bendavis354@gmail.com",
         "sender": "Local Food Digest",
-        "summary": "Market schedule and grant links."
+        "summary": "Market schedule and grant links.",
+        "status": "waiting_on_ben",
+        "date": "2026-05-28T12:00:00-04:00"
       }
     ],
     "spam": [
       {
         "account": "bendavis354@gmail.com",
         "sender": "Promo Sender",
-        "summary": "Unsolicited sales message."
+        "summary": "Unsolicited sales message.",
+        "status": "waiting_on_ben",
+        "date": "2026-05-28T12:00:00-04:00"
       }
     ]
   }
