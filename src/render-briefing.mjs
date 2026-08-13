@@ -154,8 +154,11 @@ function bottomLine() {
 // Priority items in presentation order, plus a lookup from conversation key to
 // the item number they appear as — so the response queue can cross-reference
 // rather than silently repeat them.
+// Priority 1 is the highest, so this sorts ascending: item 1 of the document is
+// the item that matters most. Equal priorities keep the order the analysis step
+// chose (Array#sort is stable).
 const orderedItems = [...((brief || fallbackBrief()).items || [])]
-  .sort((x, y) => (y.priority || 3) - (x.priority || 3));
+  .sort((x, y) => (x.priority || 3) - (y.priority || 3));
 const itemNumberByKey = new Map();
 orderedItems.forEach((item, i) => {
   for (const key of item.conversationKeys || []) itemNumberByKey.set(key, i + 1);

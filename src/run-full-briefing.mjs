@@ -4,6 +4,7 @@
  */
 
 import fs from 'node:fs';
+import { fetchWithRetry } from './http.mjs';
 import { getAccessToken } from './google-auth.mjs';
 import { emptyState } from './drive-state.mjs';
 import { loadDurableState } from './state-store.mjs';
@@ -114,7 +115,7 @@ let imessageStatus = 'missing';
 
 if (driveImessageFileId && driveToken) {
   try {
-    const res = await fetch(
+    const res = await fetchWithRetry(
       `https://www.googleapis.com/drive/v3/files/${driveImessageFileId}?alt=media`,
       { headers: { authorization: `Bearer ${driveToken}` } }
     );

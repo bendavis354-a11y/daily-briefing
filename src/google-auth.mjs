@@ -1,3 +1,5 @@
+import { fetchWithRetry } from './http.mjs';
+
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 export async function getAccessToken({ clientId, clientSecret, refreshToken }) {
@@ -5,9 +7,8 @@ export async function getAccessToken({ clientId, clientSecret, refreshToken }) {
     throw new Error('Missing Google OAuth client ID, client secret, or refresh token.');
   }
 
-  const res = await fetch(TOKEN_URL, {
+  const res = await fetchWithRetry(TOKEN_URL, {
     method: 'POST',
-    signal: AbortSignal.timeout(30000),
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       client_id: clientId,

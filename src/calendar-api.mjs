@@ -1,3 +1,4 @@
+import { fetchWithRetry } from './http.mjs';
 import { getAccessToken } from './google-auth.mjs';
 
 const CALENDAR = 'https://www.googleapis.com/calendar/v3';
@@ -38,7 +39,7 @@ export async function listTomorrowEventsForAccount({ account, clientId, clientSe
 }
 
 export async function listCalendars({ accessToken }) {
-  const res = await fetch(`${CALENDAR}/users/me/calendarList`, {
+  const res = await fetchWithRetry(`${CALENDAR}/users/me/calendarList`, {
     headers: { authorization: `Bearer ${accessToken}` }
   });
 
@@ -54,7 +55,7 @@ export async function listEvents({ accessToken, calendarId, timeMinISO, timeMaxI
   url.searchParams.set('orderBy', 'startTime');
   url.searchParams.set('timeZone', 'America/New_York');
 
-  const res = await fetch(url, { headers: { authorization: `Bearer ${accessToken}` } });
+  const res = await fetchWithRetry(url, { headers: { authorization: `Bearer ${accessToken}` } });
   if (!res.ok) throw new Error(`Calendar events failed: ${res.status} ${await res.text()}`);
   return (await res.json()).items || [];
 }
