@@ -45,25 +45,19 @@ function nyOffset(date) {
 
 const todayISO = localDate(now, TZ);
 const tomorrowISO = localDate(addDays(now, 1), TZ);
-const offset = (() => {
-  // Check if EDT (-4) or EST (-5)
-  const jan = new Date(now.getFullYear(), 0, 1);
-  const jul = new Date(now.getFullYear(), 6, 1);
-  const janOffset = -jan.getTimezoneOffset();
-  const nyDate = new Date(now.toLocaleString('en-US', { timeZone: TZ }));
-  const diffH = Math.round((nyDate.getTime() - now.getTime()) / 3600000);
-  return diffH >= 0 ? `+0${diffH}:00` : `-0${Math.abs(diffH)}:00`;
-})();
+const NY_OFFSET = nyOffset(now);
 
-// Use -04:00 for June (EDT)
-const NY_OFFSET = '-04:00';
-
-const tomorrowMin = `${tomorrowISO}T00:00:00${NY_OFFSET}`;
-const tomorrowMax = `${tomorrowISO}T23:59:59${NY_OFFSET}`;
+// The brief runs in the morning, so section 5 covers TODAY. The briefing JSON
+// keys stay `tomorrowSchedule` / `eventsTomorrow` / `tomorrowLabel` because the
+// schema and five other consumers read those names; only the day they describe
+// has changed.
+const scheduleISO = todayISO;
+const scheduleMin = `${scheduleISO}T00:00:00${NY_OFFSET}`;
+const scheduleMax = `${scheduleISO}T23:59:59${NY_OFFSET}`;
 const weekMin = `${todayISO}T00:00:00${NY_OFFSET}`;
 const weekMax = `${localDate(addDays(now, 6), TZ)}T23:59:59${NY_OFFSET}`;
 
-console.log(`STEP 1: today=${todayISO}  tomorrow=${tomorrowISO}  week window=${weekMin} to ${weekMax}`);
+console.log(`STEP 1: today=${todayISO}  schedule day=${scheduleISO}  offset=${NY_OFFSET}  week window=${weekMin} to ${weekMax}`);
 
 // ── Credentials ───────────────────────────────────────────────────────────────
 const accounts = JSON.parse(process.env.GMAIL_ACCOUNTS_JSON || '[]');
@@ -111,6 +105,7 @@ const snoozedKeys = new Set(
 console.log('STEP 2B: Loading iMessage export…');
 let imessageData = null;
 let imessageStatus = 'missing';
+let imessageAgeHours = null;
 
 if (driveImessageFileId && driveToken) {
   try {
@@ -125,6 +120,7 @@ if (driveImessageFileId && driveToken) {
       imessageData = await res.json();
       const exportedAt = new Date(imessageData.exportedAt || 0);
       const ageHours = (now - exportedAt) / 3600000;
+      imessageAgeHours = ageHours;
       if (ageHours > 6) {
         console.log(`iMessage export is stale (${ageHours.toFixed(1)}h old, exported at ${imessageData.exportedAt})`);
         imessageStatus = 'stale';
@@ -176,7 +172,7 @@ console.log(`Active conversations: ${activeConvos.length}`);
 // ── STEP 4: Scan Calendar ─────────────────────────────────────────────────────
 console.log('STEP 4: Scanning calendar…');
 const allCalendars = [];
-const tomorrowEvents = [];
+const scheduleEvents = [];
 const weekEvents = [];
 const seenCalIds = new Set();
 
@@ -208,11 +204,11 @@ for (const account of accounts) {
     // Tomorrow events
     for (const cal of cals) {
       try {
-        const evts = await listEvents({ accessToken, calendarId: cal.id, timeMinISO: tomorrowMin, timeMaxISO: tomorrowMax });
+        const evts = await listEvents({ accessToken, calendarId: cal.id, timeMinISO: scheduleMin, timeMaxISO: scheduleMax });
         for (const ev of evts) {
           const key = `${ev.summary}|${ev.start?.dateTime || ev.start?.date}`;
-          if (!tomorrowEvents.find(e => `${e.title}|${e.start}` === key)) {
-            tomorrowEvents.push(buildEvent(ev, cal));
+          if (!scheduleEvents.find(e => `${e.title}|${e.start}` === key)) {
+            scheduleEvents.push(buildEvent(ev, cal));
           }
         }
       } catch (_) {}
@@ -235,9 +231,9 @@ for (const account of accounts) {
   }
 }
 
-tomorrowEvents.sort((a, b) => String(a.start || '').localeCompare(String(b.start || '')));
+scheduleEvents.sort((a, b) => String(a.start || '').localeCompare(String(b.start || '')));
 weekEvents.sort((a, b) => String(a.start || '').localeCompare(String(b.start || '')));
-console.log(`Calendar: ${tomorrowEvents.length} events tomorrow, ${weekEvents.length} this week`);
+console.log(`Calendar: ${scheduleEvents.length} events on ${scheduleISO}, ${weekEvents.length} this week`);
 
 function buildEvent(ev, cal) {
   return {
@@ -498,7 +494,10 @@ const imessageSection = [];
 let imessagesScanned = 0;
 let imessagesActionable = 0;
 
-if (imessageData && imessageStatus !== 'missing') {
+// Only a fresh export is processed. A stale one used to fall into this branch
+// too (the stale else-if below was unreachable), so a dead Mac exporter kept
+// resurfacing weeks-old chats as new todos and meeting proposals every day.
+if (imessageData && imessageStatus === 'fresh') {
   const messages = imessageData.messages || [];
   imessagesScanned = messages.length;
   console.log(`Processing ${imessagesScanned} iMessages…`);
@@ -579,14 +578,16 @@ if (imessageData && imessageStatus !== 'missing') {
     }
   }
 } else if (imessageStatus === 'stale') {
+  const ageDays = imessageAgeHours != null ? (imessageAgeHours / 24).toFixed(1) : '?';
   imessageSection.push({
     id: 'imsg-stale-notice',
     sender: 'System',
     handle: '',
     chat: 'system',
     date: now.toISOString(),
-    summary: `iMessage export is stale (exported ${imessageData?.exportedAt || 'unknown'}). Fresh data unavailable.`,
-    priority: 'low',
+    summary: `iMessage export is stale — last upload ${imessageData?.exportedAt || 'unknown'} (${ageDays} days ago). ` +
+      `The Mac exporter has stopped. On the Mac: tail ~/Library/Logs/ben-briefing/export.log — see mac/README.md troubleshooting.`,
+    priority: imessageAgeHours != null && imessageAgeHours > 48 ? 'high' : 'low',
     needsReply: false,
     todoText: null
   });
@@ -597,7 +598,7 @@ if (imessageData && imessageStatus !== 'missing') {
     handle: '',
     chat: 'system',
     date: now.toISOString(),
-    summary: 'iMessage export was unavailable for this run.',
+    summary: 'iMessage export was unavailable for this run (Drive file unreadable or no Drive token).',
     priority: 'low',
     needsReply: false,
     todoText: null
@@ -640,12 +641,12 @@ const briefing = {
     dataFreshThrough: generatedAt,
     liveUrl,
     todayLabel: formatDateLabel(now, TZ),
-    tomorrowLabel: formatDateLabel(addDays(now, 1), TZ)
+    tomorrowLabel: formatDateLabel(now, TZ)
   },
   stats: {
     emailsScanned: deduped.length,
     urgent: urgent.length,
-    eventsTomorrow: tomorrowEvents.length,
+    eventsTomorrow: scheduleEvents.length,
     eventsThisWeek: weekEvents.length,
     proposedEvents: calendarProposals.length,
     suggestedReplies: trimmedReplies.length,
@@ -657,7 +658,7 @@ const briefing = {
   calendars: allCalendars.length ? allCalendars : [{ id: 'primary', name: 'Primary Calendar', color: '#3A7556' }],
   sections: {
     urgent,
-    tomorrowSchedule: tomorrowEvents,
+    tomorrowSchedule: scheduleEvents,
     weekSchedule: weekEvents,
     calendarProposals,
     suggestedReplies: trimmedReplies,

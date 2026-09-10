@@ -15,7 +15,7 @@ Ben operates three accounts, and every item must carry its designator:
   the Gmail connector (its custom-OAuth token is not durable). Texts (iMessage)
   arrive via the Drive export when fresh.
 
-This routine runs daily at 4:30 PM America/New_York as an agent session with
+This routine runs daily at 7:00 AM America/New_York as an agent session with
 the Gmail connector plus this repo's Node scripts. Assistant memory lives as an
 encrypted file (`state.enc`) on the `claude/briefing` branch of this repo — the
 scripts read and write it directly; no Drive connector or Google token is

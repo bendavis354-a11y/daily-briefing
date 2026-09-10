@@ -15,7 +15,7 @@
  *                       a reply, oldest first; derived from the scan (not from
  *                       the analysis step) so nothing can be dropped by
  *                       editorial judgment; newsletters and spam excluded
- *   5. SCHEDULE      — tomorrow's commitments, proposed calendar entries
+ *   5. SCHEDULE      — the day's commitments, proposed calendar entries
  *   6. OTHER DEVELOPMENTS — one-line items
  *   7. ROUTINE TRAFFIC — one-line disposition of the compressed mass
  *   Appendix         — full categorized traffic, collapsed
@@ -385,7 +385,7 @@ function schedule() {
   if (!tomorrow.length && !week.length && !proposals.length) return '';
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">5. Schedule — ${esc(meta.tomorrowLabel || 'tomorrow')}</h2>
+    <h2 class="sec-label">5. Schedule — ${esc(meta.tomorrowLabel || 'today')}</h2>
     <div id="tomorrow-schedule" class="sched">
       ${tomorrow.length ? tomorrow.map(eventRow).join('') : '<p class="none">No commitments scheduled.</p>'}
     </div>

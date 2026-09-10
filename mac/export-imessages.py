@@ -277,8 +277,16 @@ def get_access_token(cfg: dict) -> str:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode("utf-8"))["access_token"]
     except urllib.error.HTTPError as exc:
-        log(f"ERROR: OAuth refresh failed: {exc.code} {exc.read().decode('utf-8', 'replace')}")
-        log("Check client_id / client_secret / refresh_token in your config.")
+        body = exc.read().decode("utf-8", "replace")
+        log(f"ERROR: OAuth refresh failed: {exc.code} {body}")
+        if "invalid_grant" in body:
+            log("invalid_grant means the refresh token is expired or revoked.")
+            log("If this config holds a token for a consumer @gmail.com account, that")
+            log("is expected: unverified apps only get 7-day refresh tokens for consumer")
+            log("accounts, and publishing the app does NOT extend them. Use a Workspace")
+            log("account with Drive scope instead — see mac/README.md, 'What you need'.")
+        else:
+            log("Check client_id / client_secret / refresh_token in your config.")
         sys.exit(4)
 
 
