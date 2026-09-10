@@ -83,6 +83,30 @@ Then **edit the config** with your real values:
 nano ~/.config/ben-briefing/imessage-export.json
 ```
 
+## Minting a refresh token
+
+The exporter needs a durable refresh token for a **Workspace** account. To get
+one, sign in as that account and run:
+
+```bash
+python3 mac/mint-refresh-token.py --write
+```
+
+It reads `client_id` / `client_secret` from your existing config (so no
+retyping, and the secret is never printed), runs a loopback OAuth flow in your
+browser, and writes the resulting `refresh_token` back into the config.
+
+It requests full `drive` scope, which is required: the exporter overwrites a
+file it did not create, and the narrower `drive.file` scope cannot reach such a
+file. If you would rather grant only `drive.file`, let the Workspace account
+create its own export file and point both `drive_file_id` here and
+`DRIVE_IMESSAGE_FILE_ID` in the routine settings at it.
+
+If Google reports `redirect_uri_mismatch`, your OAuth client is a "Web
+application" type. Either add the exact `http://127.0.0.1:PORT` URI the script
+prints to its Authorized redirect URIs in Cloud Console, or create a "Desktop
+app" client, which allows loopback without configuration.
+
 ## Grant Full Disk Access (required)
 
 macOS blocks reads of `chat.db` unless the program running the job has Full
