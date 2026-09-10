@@ -39,10 +39,24 @@ configured (the Claude Code routine settings).
 > Gmail connector, and Drive state through the Drive connector, precisely
 > because it expires. An exporter built on it dies after a week, every week.
 >
-> Use a **Workspace** account instead (`ben@heartspringgardens.org` or
-> `benjamin@biodynamics.com`). Those get durable refresh tokens. Because the
-> export file is owned by `bendavis354@gmail.com`, you must also share it with
-> the Workspace account as **Editor**, or the upload will fail with 404.
+> Use a **Workspace** account instead. Prefer `ben@heartspringgardens.org`:
+> it is the account `DRIVE_STATE_ACCOUNT` already names, and it keeps personal
+> message data out of a Workspace Ben does not administer.
+>
+> **The export file must be shared with that account as Editor.** It is owned
+> by `bendavis354@gmail.com` and, by default, shared with no one. Both ends of
+> the pipeline need that grant:
+>
+> - the **Mac upload** PATCHes the file, so without Editor it fails with 404;
+> - the **cloud read** authenticates as whatever `pickDriveAccount()` returns,
+>   which is never the connector (consumer) account — see `src/accounts.mjs`.
+>   Without the grant the routine's `alt=media` read 404s and the briefing
+>   reports the export missing *even when the Mac is uploading successfully*.
+>
+> Sharing the file once fixes both ends. Alternatively, give the file to the
+> Workspace account outright and update `drive_file_id` here and
+> `DRIVE_IMESSAGE_FILE_ID` in the routine settings, which drops the consumer
+> account from the path entirely.
 
 > Not sure whether the Mac has access yet? You don't need anything
 > pre-installed on the Mac. The four values above are all that's required, and
