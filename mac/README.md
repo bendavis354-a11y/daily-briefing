@@ -115,7 +115,17 @@ If the briefing keeps reporting **iMessage export: stale**, the Drive file has
 stopped being updated — the exporter on this Mac is failing or not running at
 all. The cloud side cannot fix this; diagnose here, on the Mac.
 
-Note for zsh (the default macOS shell): `#` is **not** a comment character in
+**Quickest path: run the diagnostic script.** It performs every check below
+and prints a verdict, changing nothing and printing no secrets:
+
+```bash
+bash mac/diagnose.sh
+```
+
+If you cannot find the clone to run it from, that is itself the answer — see
+step 1 below.
+
+If you would rather check by hand, note for zsh (the default macOS shell): `#` is **not** a comment character in
 an interactive zsh session, so pasting a commented command makes zsh try to
 glob the comment and fail with `no matches found`. The commands below are
 deliberately comment-free — paste them one at a time.
