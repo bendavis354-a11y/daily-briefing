@@ -50,7 +50,7 @@ if launchctl list 2>/dev/null | grep -q "$LABEL"; then
   case "$last_exit" in
     0|-) ;;
     3) add_problem "Agent's last run exited 3: cannot read chat.db — Full Disk Access missing." ;;
-    4) add_problem "Agent's last run exited 4: Google OAuth refresh failed — token expired or revoked." ;;
+    4) add_problem "Agent's last run exited 4: Google OAuth refresh failed. If the config holds a consumer @gmail.com token, it expired after 7 days and will again — switch to a Workspace account token with Drive scope. See mac/README.md." ;;
     5) add_problem "Agent's last run exited 5: Drive upload failed — check drive_file_id." ;;
     2) add_problem "Agent's last run exited 2: config missing or incomplete at $CONFIG_FILE" ;;
     *) add_problem "Agent's last run exited $last_exit — see the log below." ;;

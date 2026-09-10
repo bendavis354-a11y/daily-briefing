@@ -25,13 +25,24 @@ The exporter needs four values, the same ones the cloud routine already uses:
 |------------------|-----------------------------------------------------------------|
 | `client_id`      | `GOOGLE_OAUTH_CLIENT_ID` (your Google OAuth app)                |
 | `client_secret`  | `GOOGLE_OAUTH_CLIENT_SECRET`                                     |
-| `refresh_token`  | the refresh token for **bendavis354@gmail.com** (the account the routine uses for Drive) |
+| `refresh_token`  | a **Workspace** account's refresh token with Drive scope (e.g. `ben@heartspringgardens.org`) — see the warning below |
 | `drive_file_id`  | `DRIVE_IMESSAGE_FILE_ID` (the Drive file the routine reads)      |
 
 You can copy these from wherever the routine's environment variables are
-configured (the Claude Code routine settings). Reusing the
-`bendavis354@gmail.com` refresh token is the simplest option — it already has
-Drive access, so no new OAuth setup is required.
+configured (the Claude Code routine settings).
+
+> **Do not use the `bendavis354@gmail.com` token here.** Consumer `gmail.com`
+> accounts only receive **7-day** refresh tokens from an unverified app, and
+> publishing the app to production does not extend them (see "Durability model"
+> in `BEN_ASSISTANT_IMPLEMENTATION_GUIDE.md`). The rest of the briefing system
+> deliberately avoids that token — the personal mailbox is read through the
+> Gmail connector, and Drive state through the Drive connector, precisely
+> because it expires. An exporter built on it dies after a week, every week.
+>
+> Use a **Workspace** account instead (`ben@heartspringgardens.org` or
+> `benjamin@biodynamics.com`). Those get durable refresh tokens. Because the
+> export file is owned by `bendavis354@gmail.com`, you must also share it with
+> the Workspace account as **Editor**, or the upload will fail with 404.
 
 > Not sure whether the Mac has access yet? You don't need anything
 > pre-installed on the Mac. The four values above are all that's required, and
