@@ -111,6 +111,7 @@ const snoozedKeys = new Set(
 console.log('STEP 2B: Loading iMessage export…');
 let imessageData = null;
 let imessageStatus = 'missing';
+let imessageAgeHours = null;
 
 if (driveImessageFileId && driveToken) {
   try {
@@ -125,6 +126,7 @@ if (driveImessageFileId && driveToken) {
       imessageData = await res.json();
       const exportedAt = new Date(imessageData.exportedAt || 0);
       const ageHours = (now - exportedAt) / 3600000;
+      imessageAgeHours = ageHours;
       if (ageHours > 6) {
         console.log(`iMessage export is stale (${ageHours.toFixed(1)}h old, exported at ${imessageData.exportedAt})`);
         imessageStatus = 'stale';
@@ -498,7 +500,10 @@ const imessageSection = [];
 let imessagesScanned = 0;
 let imessagesActionable = 0;
 
-if (imessageData && imessageStatus !== 'missing') {
+// Only a fresh export is processed. A stale one used to fall into this branch
+// too (the stale else-if below was unreachable), so a dead Mac exporter kept
+// resurfacing weeks-old chats as new todos and meeting proposals every day.
+if (imessageData && imessageStatus === 'fresh') {
   const messages = imessageData.messages || [];
   imessagesScanned = messages.length;
   console.log(`Processing ${imessagesScanned} iMessages…`);
@@ -579,14 +584,16 @@ if (imessageData && imessageStatus !== 'missing') {
     }
   }
 } else if (imessageStatus === 'stale') {
+  const ageDays = imessageAgeHours != null ? (imessageAgeHours / 24).toFixed(1) : '?';
   imessageSection.push({
     id: 'imsg-stale-notice',
     sender: 'System',
     handle: '',
     chat: 'system',
     date: now.toISOString(),
-    summary: `iMessage export is stale (exported ${imessageData?.exportedAt || 'unknown'}). Fresh data unavailable.`,
-    priority: 'low',
+    summary: `iMessage export is stale — last upload ${imessageData?.exportedAt || 'unknown'} (${ageDays} days ago). ` +
+      `The Mac exporter has stopped. On the Mac: tail ~/Library/Logs/ben-briefing/export.log — see mac/README.md troubleshooting.`,
+    priority: imessageAgeHours != null && imessageAgeHours > 48 ? 'high' : 'low',
     needsReply: false,
     todoText: null
   });
@@ -597,7 +604,7 @@ if (imessageData && imessageStatus !== 'missing') {
     handle: '',
     chat: 'system',
     date: now.toISOString(),
-    summary: 'iMessage export was unavailable for this run.',
+    summary: 'iMessage export was unavailable for this run (Drive file unreadable or no Drive token).',
     priority: 'low',
     needsReply: false,
     todoText: null
