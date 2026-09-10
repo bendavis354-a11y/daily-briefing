@@ -72,15 +72,21 @@ log — that's the signal Full Disk Access is missing.
 
 ## Verify
 
+Run once by hand, writing a local copy you can inspect:
+
 ```bash
-# Run once by hand and write a local copy you can inspect:
-BEN_IMESSAGE_LOCAL_OUT=/tmp/imessage-export.json \
-  python3 mac/export-imessages.py
+BEN_IMESSAGE_LOCAL_OUT=/tmp/imessage-export.json python3 mac/export-imessages.py
+```
 
-# Watch the scheduled runs:
+Watch the scheduled runs:
+
+```bash
 tail -f ~/Library/Logs/ben-briefing/export.log
+```
 
-# Confirm the agent is loaded:
+Confirm the agent is loaded:
+
+```bash
 launchctl list | grep com.ben.imessage-export
 ```
 
@@ -107,20 +113,50 @@ briefing (4:30pm ET) will then report **iMessage export: fresh**.
 
 If the briefing keeps reporting **iMessage export: stale**, the Drive file has
 stopped being updated — the exporter on this Mac is failing or not running at
-all. The cloud side cannot fix this; diagnose here. Run these on the Mac:
+all. The cloud side cannot fix this; diagnose here, on the Mac.
+
+Note for zsh (the default macOS shell): `#` is **not** a comment character in
+an interactive zsh session, so pasting a commented command makes zsh try to
+glob the comment and fail with `no matches found`. The commands below are
+deliberately comment-free — paste them one at a time.
+
+**1. Locate the clone** (the launchd job stores an absolute path, so a moved or
+re-cloned repo silently breaks it):
 
 ```bash
-# 1. Is the agent still loaded? (empty output = not loaded)
-launchctl list | grep com.ben.imessage-export
-
-# 2. What did the last runs say?
-tail -50 ~/Library/Logs/ben-briefing/export.log
-
-# 3. Run it by hand and watch the output:
-python3 /path/to/daily-briefing/mac/export-imessages.py
+find ~ -name export-imessages.py -not -path '*/Library/*' 2>/dev/null
 ```
 
-The log/exit code tells you which of these it is:
+**2. Is the agent loaded?** Empty output means it is not:
+
+```bash
+launchctl list | grep com.ben.imessage-export
+```
+
+**3. What path does the installed job point at?** Compare it to step 1:
+
+```bash
+cat ~/Library/LaunchAgents/com.ben.imessage-export.plist
+```
+
+**4. What did the last runs say?**
+
+```bash
+tail -50 ~/Library/Logs/ben-briefing/export.log
+```
+
+**5. Run it by hand**, substituting the real path from step 1:
+
+```bash
+python3 ~/daily-briefing/mac/export-imessages.py
+```
+
+If step 5 reports `No such file or directory`, you pasted a path that does not
+exist — go back to step 1. If it reports nothing at all from `find`, this Mac
+has no clone of the repo and the exporter was never installed here; clone the
+repo and run `bash mac/install.sh`.
+
+Otherwise the log/exit code tells you which of these it is:
 
 | Symptom in log | Cause | Fix |
 |---|---|---|
