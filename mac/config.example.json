@@ -2,6 +2,6 @@
   "github_token": "REPLACE_WITH_FINE_GRAINED_PAT_CONTENTS_READ_WRITE",
   "github_repo": "bendavis354-a11y/daily-briefing",
   "github_branch": "claude/briefing",
-  "encryption_key": "REPLACE_WITH_THE_SAME_VALUE_AS_CLOUD_STATE_ENCRYPTION_KEY",
+  "encryption_key": "REPLACE_WITH_CLOUD_STATE_ENCRYPTION_KEY_OR_BRIEFING_PASSWORD",
   "window_hours": 48
 }

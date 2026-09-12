@@ -578,7 +578,8 @@ if (imessageData && imessageStatus === 'fresh') {
     chat: 'system',
     date: now.toISOString(),
     summary: `iMessage export could not be decrypted (${imessageResult.error}). ` +
-      `The Mac exporter and this pipeline disagree on STATE_ENCRYPTION_KEY — see mac/README.md.`,
+      `The Mac exporter and this pipeline disagree on the encryption key ` +
+      `(STATE_ENCRYPTION_KEY, or BRIEFING_PASSWORD when unset) — see mac/README.md.`,
     priority: 'high',
     needsReply: false,
     todoText: null

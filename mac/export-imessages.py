@@ -20,8 +20,9 @@ the upload half broke weekly by construction. Durable memory hit the identical
 wall and moved into the repo; this now rides the same rails.
 
 The payload is AES-256-GCM encrypted with the same BAS1 container the cloud
-side uses for state.enc, so the repo may stay public. The key must match
-STATE_ENCRYPTION_KEY (or BRIEFING_PASSWORD) in the cloud environment.
+side uses for state.enc, so the repo may stay public. The key must match the
+cloud's STATE_ENCRYPTION_KEY, or BRIEFING_PASSWORD when that is unset — see
+statePassword() in src/state-store.mjs for the precedence.
 
 Dependencies: Python 3 standard library, plus `cryptography` for AES-GCM
 (install.sh installs it; macOS ships no AES in the stdlib).
@@ -33,7 +34,7 @@ path in the BEN_IMESSAGE_CONFIG environment variable. Config shape:
   "github_token": "github_pat_...",   // fine-grained PAT, Contents: read+write
   "github_repo": "owner/repo",
   "github_branch": "claude/briefing", // optional, default claude/briefing
-  "encryption_key": "...",            // must equal cloud STATE_ENCRYPTION_KEY
+  "encryption_key": "...",            // cloud STATE_ENCRYPTION_KEY, else BRIEFING_PASSWORD
   "window_hours": 48                  // optional, default 48
 }
 """

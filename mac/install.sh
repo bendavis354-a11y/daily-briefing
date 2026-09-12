@@ -102,8 +102,9 @@ cat <<NOTE
 ==> Fill in the config: $CONFIG_FILE
     github_token    fine-grained PAT, this repo only, Contents: Read and write
     github_repo     owner/repo of the briefing repository
-    encryption_key  MUST equal STATE_ENCRYPTION_KEY in the cloud environment,
-                    or the cloud run will report a decryption error
+    encryption_key  MUST equal the cloud's STATE_ENCRYPTION_KEY, or, when that
+                    is not set, BRIEFING_PASSWORD (the briefing page password).
+                    Mismatch = the cloud run reports a decryption error.
 
 ==> One more manual step: GRANT FULL DISK ACCESS
     macOS blocks reads of ~/Library/Messages/chat.db unless the program

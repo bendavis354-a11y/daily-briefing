@@ -49,7 +49,7 @@ Three values, in `~/.config/ben-briefing/imessage-export.json`:
 |------------------|-----------------------------------------------------------------|
 | `github_token`   | a **fine-grained** personal access token, scoped to this repository only, with **Contents: Read and write** |
 | `github_repo`    | `owner/repo` of the briefing repository                          |
-| `encryption_key` | must equal `STATE_ENCRYPTION_KEY` in the cloud routine's environment |
+| `encryption_key` | must equal the cloud's `STATE_ENCRYPTION_KEY`; if that is unset the cloud falls back to `BRIEFING_PASSWORD`, so use that instead |
 
 Optional: `github_branch` (default `claude/briefing`), `window_hours`
 (default 48).
@@ -60,9 +60,16 @@ Repository permissions set **Contents** to *Read and write*. Note the
 expiry you choose — when it lapses the export stops, and `mac/diagnose.sh`
 section 8 will say so.
 
-`encryption_key` must match the cloud value exactly. If it does not, the push
-still succeeds and the briefing reports a decryption error rather than a
-missing export, which tells you the two ends disagree about the key.
+`encryption_key` must match the cloud value exactly. The cloud reads
+`STATE_ENCRYPTION_KEY` and falls back to `BRIEFING_PASSWORD` when it is not
+set — see `statePassword()` in `src/state-store.mjs` — so check which of the
+two is actually populated in the routine settings before copying. Today only
+`BRIEFING_PASSWORD` is set, which is the password that unlocks the briefing
+page.
+
+If the two ends disagree the push still succeeds and the briefing reports a
+decryption error rather than a missing export, which is how you tell a key
+mismatch from a dead exporter.
 
 > Nothing needs to be pre-installed on the Mac beyond Python 3 and the
 > `cryptography` package, which `install.sh` installs for you. The three values
@@ -167,8 +174,9 @@ stopped being updated — the exporter on this Mac is failing or not running at
 all. The cloud side cannot fix this; diagnose here, on the Mac.
 
 If instead the briefing reports a **decryption error**, the exporter is running
-fine and `encryption_key` here disagrees with `STATE_ENCRYPTION_KEY` in the
-cloud environment. Make them match.
+fine and `encryption_key` here disagrees with the cloud's key
+(`STATE_ENCRYPTION_KEY`, or `BRIEFING_PASSWORD` when that is unset). Make them
+match.
 
 **Quickest path: run the diagnostic script.** It performs every check below
 and prints a verdict, changing nothing and printing no secrets:
