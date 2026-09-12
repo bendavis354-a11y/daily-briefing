@@ -10,7 +10,7 @@ import { loadDurableState } from './state-store.mjs';
 import { scanConfiguredMailboxes, loadConnectorMessages } from './gmail-api.mjs';
 import { dedupeMessages, groupConversations } from './continuity.mjs';
 import { isConnectorAccount } from './accounts.mjs';
-import { loadImessageExport } from './imessage-store.mjs';
+import { loadImessageExport, tokenExpiryWarning, REPAIR_COMMAND } from './imessage-store.mjs';
 import { carryForwardTasks, applyReplyCompletions, retainTasks, dedupeTasks, extractReplyObservations } from './tasks.mjs';
 import { listTomorrowEventsForAccount, listCalendars, listEvents } from './calendar-api.mjs';
 
@@ -587,7 +587,7 @@ if (imessageData && imessageStatus === 'fresh') {
     chat: 'system',
     date: now.toISOString(),
     summary: `iMessage export is stale — last upload ${imessageData?.exportedAt || 'unknown'} (${ageDays} days ago). ` +
-      `The Mac exporter has stopped. On the Mac: tail ~/Library/Logs/ben-briefing/export.log — see mac/README.md troubleshooting.`,
+      `The Mac exporter has stopped. On the Mac, run: ${REPAIR_COMMAND}`,
     priority: imessageAgeHours != null && imessageAgeHours > 48 ? 'high' : 'low',
     needsReply: false,
     todoText: null
@@ -600,8 +600,9 @@ if (imessageData && imessageStatus === 'fresh') {
     chat: 'system',
     date: now.toISOString(),
     summary: `iMessage export could not be decrypted (${imessageResult.error}). ` +
-      `The Mac exporter and this pipeline disagree on the encryption key ` +
-      `(STATE_ENCRYPTION_KEY, or BRIEFING_PASSWORD when unset) — see mac/README.md.`,
+      `The Mac exporter is running, but its encryption_key does not match this ` +
+      `environment's key (STATE_ENCRYPTION_KEY, or BRIEFING_PASSWORD when unset). ` +
+      `On the Mac, run: ${REPAIR_COMMAND}`,
     priority: 'high',
     needsReply: false,
     todoText: null
@@ -614,11 +615,47 @@ if (imessageData && imessageStatus === 'fresh') {
     chat: 'system',
     date: now.toISOString(),
     summary: `No iMessage export found on the deploy branch (${imessageResult.error || 'not found'}). ` +
-      `Either the Mac exporter has never run or it cannot push — see mac/README.md.`,
+      `Either the Mac exporter has never run or it cannot push. On the Mac, run: ${REPAIR_COMMAND}`,
     priority: 'low',
     needsReply: false,
     todoText: null
   });
+}
+
+// Token expiry is the likeliest scheduled failure in the whole chain, and the
+// only one that can be caught BEFORE it bites. Warned on any export that
+// carries the date, stale ones included, and raised as an action item so it
+// lands on the checklist rather than only in the texts section.
+const tokenWarning = tokenExpiryWarning(imessageData, now);
+if (tokenWarning) {
+  const { daysLeft } = tokenWarning;
+  const overdue = daysLeft <= 0;
+  imessageSection.unshift({
+    id: 'imsg-token-expiry',
+    sender: 'System',
+    handle: '',
+    chat: 'system',
+    date: now.toISOString(),
+    summary: overdue
+      ? `The Mac exporter's GitHub token has EXPIRED. Texts have stopped. On the Mac, run: ${REPAIR_COMMAND}`
+      : `The Mac exporter's GitHub token expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. ` +
+        `Mint a replacement with Contents: Read and write, then set it as github_token ` +
+        `in ~/.config/ben-briefing/imessage-export.json.`,
+    priority: daysLeft <= 7 ? 'high' : 'medium',
+    needsReply: false,
+    todoText: null
+  });
+  todos.push({
+    id: 'todo-imsg-token-expiry',
+    priority: daysLeft <= 7 ? 'high' : 'medium',
+    text: overdue
+      ? 'Renew the expired GitHub token for the Mac iMessage exporter'
+      : `Renew the Mac iMessage exporter's GitHub token (${daysLeft} days left)`,
+    context: 'Without it the Mac stops publishing texts and the briefing loses them silently.',
+    status: 'open',
+    origin: 'imessage'
+  });
+  console.log(`Token expiry warning: ${daysLeft} days left`);
 }
 
 console.log(`iMessages: scanned=${imessagesScanned}, actionable=${imessagesActionable}`);

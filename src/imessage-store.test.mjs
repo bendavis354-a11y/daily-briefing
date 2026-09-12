@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { encryptState } from './state-store.mjs';
-import { loadImessageExport, STALE_AFTER_HOURS } from './imessage-store.mjs';
+import { loadImessageExport, STALE_AFTER_HOURS, TOKEN_WARN_DAYS, tokenExpiryWarning } from './imessage-store.mjs';
 
 process.env.STATE_ENCRYPTION_KEY = 'test-key-for-imessage-store';
 
@@ -122,6 +122,41 @@ check('a malformed override degrades to missing without throwing', () => {
       delete process.env.IMESSAGE_EXPORT_FILE;
     }
   });
+});
+
+// ── token expiry warning ─────────────────────────────────────────────────────
+// The likeliest scheduled failure, and the only one catchable in advance.
+const daysOut = d => new Date(NOW.getTime() + d * 86400000).toISOString();
+
+check('no warning while the token has plenty of life', () => {
+  assert.strictEqual(tokenExpiryWarning({ tokenExpiresAt: daysOut(90) }, NOW), null);
+});
+
+check('warns inside the notice window', () => {
+  const w = tokenExpiryWarning({ tokenExpiresAt: daysOut(TOKEN_WARN_DAYS - 1) }, NOW);
+  assert.ok(w, 'expected a warning');
+  assert.strictEqual(w.daysLeft, TOKEN_WARN_DAYS - 1);
+});
+
+check('an already-expired token reports non-positive days', () => {
+  const w = tokenExpiryWarning({ tokenExpiresAt: daysOut(-3) }, NOW);
+  assert.ok(w && w.daysLeft < 0, `expected a negative count, got ${w && w.daysLeft}`);
+});
+
+check("GitHub's own header format parses", () => {
+  // What the API actually returns, e.g. "2027-09-12 12:14:35 UTC".
+  const iso = daysOut(5);
+  const gh = iso.slice(0, 10) + ' ' + iso.slice(11, 19) + ' UTC';
+  const w = tokenExpiryWarning({ tokenExpiresAt: gh }, NOW);
+  assert.ok(w, `expected the GitHub format to parse: ${gh}`);
+  assert.strictEqual(w.daysLeft, 5);
+});
+
+check('a missing or unparseable expiry is silent, never a false alarm', () => {
+  assert.strictEqual(tokenExpiryWarning({}, NOW), null);
+  assert.strictEqual(tokenExpiryWarning({ tokenExpiresAt: '' }, NOW), null);
+  assert.strictEqual(tokenExpiryWarning({ tokenExpiresAt: 'never' }, NOW), null);
+  assert.strictEqual(tokenExpiryWarning(null, NOW), null);
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });

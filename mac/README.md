@@ -152,7 +152,15 @@ To confirm the cloud side can see it without waiting for the run, check that
 ## Notes & limitations
 
 - **One dependency.** Python 3 standard library plus `cryptography`, for
-  AES-256-GCM — macOS ships no AES in the stdlib. `install.sh` installs it.
+  AES-256-GCM — macOS ships no AES in the stdlib. `install.sh` installs it, and
+  the exporter reinstalls it automatically if a Python upgrade orphans it.
+- **Token expiry is announced in advance.** GitHub reports the calling token's
+  expiry on every authenticated response. The exporter records it, and the
+  briefing raises an action item three weeks out, so the token gets renewed
+  before texts stop rather than after.
+- **Transient failures retry.** A network blip or a push that collides with the
+  daily deploy is retried with backoff. A bad token or missing branch fails
+  immediately, since retrying cannot help.
 - **Read-only.** The database is opened `mode=ro`; the live Messages app is
   never touched.
 - **attributedBody:** On macOS Ventura+ many messages store their text in a
@@ -178,12 +186,22 @@ fine and `encryption_key` here disagrees with the cloud's key
 (`STATE_ENCRYPTION_KEY`, or `BRIEFING_PASSWORD` when that is unset). Make them
 match.
 
-**Quickest path: run the diagnostic script.** It performs every check below
-and prints a verdict, changing nothing and printing no secrets:
+**Quickest path: run the diagnostic with `--fix`.** It performs every check
+below, repairs what it safely can, runs the exporter to prove the result, and
+prints a verdict. It never prints secrets:
 
 ```bash
-bash mac/diagnose.sh
+bash mac/diagnose.sh --fix
 ```
+
+Without `--fix` it only reports and changes nothing. With it, two recurring
+failures repair themselves: an encryption package orphaned by a Python upgrade,
+and a scheduled job that is unloaded or pointing at a clone that moved. Anything
+needing a decision — a lapsed token, a revoked Full Disk Access grant, a key
+mismatch — is named, not guessed at.
+
+This is the one command the briefing itself tells Ben to run when texts stop
+arriving, so it is deliberately the only thing he has to remember.
 
 If you cannot find the clone to run it from, that is itself the answer — see
 step 1 below.
@@ -239,8 +257,10 @@ Otherwise the log/exit code tells you which of these it is:
 | `disk I/O error` / `unable to open database` (exit 3) | Full Disk Access was revoked — macOS updates and python updates can silently reset this | System Settings → Privacy & Security → Full Disk Access → re-add the `python3` path from the installer output |
 | `push of imessages.enc failed: 401/403` (exit 5) | The fine-grained token expired, was revoked, or lacks **Contents: Read and write** on this repository | Mint a replacement and update `~/.config/ben-briefing/imessage-export.json` |
 | `push of imessages.enc failed: 404/422` (exit 5) | `github_repo` is wrong, or `github_branch` does not exist | Correct the config; the branch is `claude/briefing` |
-| `push of imessages.enc failed: 409` (exit 5) | The branch moved between read and write (the daily deploy landed at the same moment) | Nothing to do — the next scheduled run retries cleanly |
-| `the 'cryptography' package is required` (exit 6) | The AES dependency is missing for the python launchd runs | `python3 -m pip install --user cryptography` |
+| `push of imessages.enc failed: 409` (exit 5) | The branch moved between read and write, three times running | Nothing to do — the next scheduled run retries cleanly |
+| `cannot reach <repo>` (exit 5) | Preflight failed: token invalid, expired, or not scoped to the repo | Mint a replacement with Contents: Read and write |
+| `the token can read <repo> but cannot write` (exit 5) | The token has Contents: Read only | Regenerate with Contents: Read and write |
+| `automatic reinstall failed` (exit 6) | The AES dependency is missing and could not be repaired | `bash mac/diagnose.sh --fix`, or `python3 -m pip install --user cryptography` |
 
 After fixing, verify end-to-end: run the exporter by hand, confirm it logs
 `Done. Published N messages…`, and run `bash mac/diagnose.sh` to see

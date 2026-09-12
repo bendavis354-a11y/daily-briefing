@@ -1,14 +1,28 @@
 #!/bin/bash
 #
-# Diagnose a stalled iMessage exporter. Read-only: this script changes nothing,
-# it only reports. Run it on the Mac that is supposed to be exporting:
+# Diagnose a stalled iMessage exporter. Run it on the Mac that is supposed to
+# be exporting:
 #
-#   bash mac/diagnose.sh
+#   bash mac/diagnose.sh          report only, changes nothing
+#   bash mac/diagnose.sh --fix    also repair what can be repaired
+#
+# --fix handles the failures that recur on their own schedule and have a known
+# remedy: a Python upgrade that orphaned the encryption package, and a
+# scheduled job that is no longer loaded or points at a stale path. It will not
+# touch anything needing a human decision — a lapsed token, a revoked Full Disk
+# Access grant, a key mismatch — it names those and stops.
 #
 # Secrets are never printed — the config check reports only which keys are
 # present, never their values.
 #
 set -o pipefail
+
+FIX=0
+[[ "${1:-}" == "--fix" ]] && FIX=1
+
+fix_list=""
+record_fix() { fix_list="${fix_list}    - $1
+"; }
 
 LABEL="com.ben.imessage-export"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
@@ -57,6 +71,7 @@ if launchctl list 2>/dev/null | grep -q "$LABEL"; then
   esac
 else
   note "NOT LOADED — launchctl does not know about $LABEL."
+  needs_reinstall=1
   add_problem "launchd agent is not loaded. Run: bash mac/install.sh"
 fi
 
@@ -71,6 +86,7 @@ if [[ -f "$PLIST" ]]; then
       note "that file EXISTS."
     else
       note "that file IS MISSING — the clone was moved, renamed, or deleted."
+      needs_reinstall=1
       add_problem "The launchd job points at $job_script which no longer exists. Re-run: bash mac/install.sh from the clone's current location."
     fi
   else
@@ -78,6 +94,7 @@ if [[ -f "$PLIST" ]]; then
   fi
 else
   note "NO PLIST at $PLIST — the exporter was never installed on this Mac (or was uninstalled)."
+  needs_reinstall=1
   add_problem "No launchd plist installed. Run: bash mac/install.sh"
 fi
 
@@ -86,11 +103,11 @@ section "4. Export log"
 if [[ -f "$LOG_FILE" ]]; then
   note "log: $LOG_FILE"
   note "last modified: $(date -r "$LOG_FILE" 2>/dev/null)"
-  last_ok="$(grep 'Done. Uploaded' "$LOG_FILE" 2>/dev/null | tail -1)"
+  last_ok="$(grep -E 'Done\. (Published|Uploaded)' "$LOG_FILE" 2>/dev/null | tail -1)"
   if [[ -n "$last_ok" ]]; then
-    note "last successful upload: $last_ok"
+    note "last successful publish: $last_ok"
   else
-    note "no successful upload recorded in this log."
+    note "no successful publish recorded in this log."
   fi
   echo
   note "--- last 25 lines ---"
@@ -126,6 +143,26 @@ else
   add_problem "Config file missing at $CONFIG_FILE — copy mac/config.example.json there and fill it in."
 fi
 
+# 5B. Repair a job that is unloaded or pointing at a path that no longer exists.
+#     Re-running the installer is the supported way to re-derive the absolute
+#     paths it bakes into the plist, so --fix simply does that.
+if [[ "$FIX" == "1" && "${needs_reinstall:-0}" == "1" ]]; then
+  section "5B. Repairing the scheduled job"
+  first_clone="$(echo "$clones" | head -1)"
+  if [[ -n "$first_clone" ]]; then
+    repo_root="$(cd "$(dirname "$first_clone")/.." && pwd)"
+    note "re-running the installer from $repo_root…"
+    if bash "$repo_root/mac/install.sh" >/dev/null 2>&1; then
+      note "scheduled job REPAIRED."
+      record_fix "reinstalled the launchd agent from $repo_root"
+    else
+      note "installer failed — run it by hand: bash $repo_root/mac/install.sh"
+    fi
+  else
+    note "no clone found on this Mac, so there is nothing to reinstall from."
+  fi
+fi
+
 # 6. Can this python actually read chat.db? (the Full Disk Access test)
 section "6. Full Disk Access (chat.db read test)"
 if [[ ! -f "$CHAT_DB" ]]; then
@@ -156,8 +193,20 @@ section "7. Encryption dependency"
 if [[ -n "$PYTHON_BIN" ]]; then
   if "$PYTHON_BIN" -c "from cryptography.hazmat.primitives.ciphers.aead import AESGCM" 2>/dev/null; then
     note "cryptography: importable — AES-256-GCM available."
+  elif [[ "$FIX" == "1" ]]; then
+    note "cryptography: missing — reinstalling…"
+    if "$PYTHON_BIN" -m pip install --user --quiet cryptography 2>&1 | sed 's/^/      /'; then
+      if "$PYTHON_BIN" -c "from cryptography.hazmat.primitives.ciphers.aead import AESGCM" 2>/dev/null; then
+        note "cryptography: REPAIRED."
+        record_fix "reinstalled the cryptography package"
+      else
+        add_problem "Reinstalled 'cryptography' but it still will not import for $PYTHON_BIN."
+      fi
+    else
+      add_problem "Could not reinstall 'cryptography'. Run by hand: $PYTHON_BIN -m pip install --user cryptography"
+    fi
   else
-    add_problem "The 'cryptography' package is missing or broken for $PYTHON_BIN. Install it: $PYTHON_BIN -m pip install --user cryptography"
+    add_problem "The 'cryptography' package is missing or broken for $PYTHON_BIN. Re-run with --fix, or: $PYTHON_BIN -m pip install --user cryptography"
   fi
 fi
 
@@ -191,10 +240,15 @@ def call(path):
         },
     )
     with urllib.request.urlopen(req, timeout=20) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        return json.loads(resp.read().decode("utf-8")), resp.headers
 
 try:
-    info = call(f"/repos/{repo}")
+    info, headers = call(f"/repos/{repo}")
+    expiry = headers.get("github-authentication-token-expiration", "")
+    if expiry:
+        print(f"    token expires: {expiry}")
+    else:
+        print("    token expires: no expiry reported (classic token, or never expires)")
     perms = info.get("permissions", {})
     can_push = perms.get("push") or perms.get("maintain") or perms.get("admin")
     print(f"    repo {repo}: reachable, push={'yes' if can_push else 'NO'}")
@@ -209,14 +263,14 @@ except Exception as exc:
     sys.exit(1)
 
 try:
-    call(f"/repos/{repo}/branches/{urllib.parse.quote(branch)}")
+    call(f"/repos/{repo}/branches/{urllib.parse.quote(branch)}")[0]
     print(f"    branch {branch}: exists")
 except urllib.error.HTTPError as exc:
     print(f"    PROBLEM: branch {branch} not found ({exc.code}).")
     sys.exit(1)
 
 try:
-    meta = call(f"/repos/{repo}/contents/imessages.enc?ref={urllib.parse.quote(branch)}")
+    meta, _ = call(f"/repos/{repo}/contents/imessages.enc?ref={urllib.parse.quote(branch)}")
     print(f"    imessages.enc: present, {meta.get('size', '?')} bytes")
 except urllib.error.HTTPError as exc:
     if exc.code == 404:
@@ -233,14 +287,37 @@ fi
 
 # Verdict
 section "VERDICT"
+if [[ -n "$fix_list" ]]; then
+  echo "    Repaired:"
+  echo "$fix_list"
+fi
+
 if [[ "$problem_count" -eq 0 ]]; then
   echo "    No blocking problem found by these checks."
-  echo "    If the export is still stale, run the exporter by hand and read the output:"
-  echo "        ${PYTHON_BIN:-python3} <clone>/mac/export-imessages.py"
 else
   echo "    $problem_count problem(s) found:"
   echo
   echo "$problem_list" | sed 's/^/    /'
+  if [[ "$FIX" != "1" ]]; then
+    echo "    Some of these can be repaired automatically. Re-run with: bash mac/diagnose.sh --fix"
+  fi
   echo "    See mac/README.md 'Troubleshooting a stalled exporter' for detail."
+fi
+
+# Whatever the verdict, the real proof is a successful run. With --fix, just do
+# it: the point of that flag is that nobody has to work out the next step.
+exporter_path="$(echo "${clones:-}" | head -1)"
+if [[ "$FIX" == "1" && -n "$exporter_path" ]]; then
+  section "Verifying with a live run"
+  if "${PYTHON_BIN:-python3}" "$exporter_path" 2>&1 | sed 's/^/    /'; then
+    echo
+    echo "    The export published successfully. Tomorrow's briefing will have your texts."
+  else
+    echo
+    echo "    The run failed. The output above names the reason."
+  fi
+elif [[ -n "$exporter_path" ]]; then
+  echo "    To prove it end to end, run the exporter and read the output:"
+  echo "        ${PYTHON_BIN:-python3} $exporter_path"
 fi
 echo

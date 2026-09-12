@@ -27,6 +27,29 @@ export const IMESSAGE_FILE = 'imessages.enc';
 /** Exports older than this are reported but never processed. */
 export const STALE_AFTER_HOURS = 6;
 
+/** Start warning about the GitHub token this many days before it lapses. */
+export const TOKEN_WARN_DAYS = 21;
+
+/** The one command Ben runs when any part of this chain fails. */
+export const REPAIR_COMMAND = 'bash ~/daily-briefing/mac/diagnose.sh --fix';
+
+/**
+ * Days until the exporter's GitHub token expires, or null when unknown.
+ *
+ * The exporter records what GitHub reports on each authenticated response.
+ * Without this the first sign of expiry is the export simply stopping, months
+ * after anyone remembers setting the token up.
+ */
+export function tokenExpiryWarning(data, now = new Date()) {
+  const raw = String(data?.tokenExpiresAt || '').trim();
+  if (!raw) return null;
+  const expires = Date.parse(raw);
+  if (Number.isNaN(expires)) return null;
+  const daysLeft = Math.floor((expires - now.getTime()) / 86400000);
+  if (daysLeft > TOKEN_WARN_DAYS) return null;
+  return { daysLeft, expiresAt: new Date(expires).toISOString() };
+}
+
 function classify(data, now) {
   const exportedAt = data?.exportedAt ? new Date(data.exportedAt) : null;
   if (!exportedAt || Number.isNaN(exportedAt.getTime())) {

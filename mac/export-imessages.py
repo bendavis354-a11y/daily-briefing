@@ -41,12 +41,16 @@ path in the BEN_IMESSAGE_CONFIG environment variable. Config shape:
 
 import base64
 import hashlib
+import importlib
 import json
 import os
 import secrets
+import site
 import sqlite3
+import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -286,19 +290,54 @@ def read_messages(db_path: Path, window_hours: int, contacts: dict) -> list:
     return messages
 
 
+def _load_aesgcm():
+    """Import AESGCM, repairing the install once if it has gone missing.
+
+    This is the most likely silent breakage in the whole chain. The package is
+    installed into the user site-packages of one specific Python, and a Command
+    Line Tools update that bumps the Python minor version orphans it. Rather
+    than fail until someone notices, try to reinstall in place: the job runs
+    every two hours, so a self-repair costs one cycle instead of days of
+    missing texts.
+    """
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        return AESGCM
+    except ImportError:
+        log("cryptography missing (likely a Python upgrade orphaned it) — reinstalling…")
+
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--user", "--quiet", "cryptography"],
+            check=True, timeout=300, capture_output=True,
+        )
+    except Exception as exc:
+        log(f"ERROR: automatic reinstall failed: {exc}")
+        log(f"Fix by hand:  {sys.executable} -m pip install --user cryptography")
+        sys.exit(6)
+
+    # A fresh install lands in a site-packages this process has not scanned.
+    importlib.invalidate_caches()
+    for path in site.getsitepackages() + [site.getusersitepackages()]:
+        if path not in sys.path:
+            sys.path.append(path)
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        log("cryptography reinstalled successfully.")
+        return AESGCM
+    except ImportError:
+        log("ERROR: reinstalled cryptography but still cannot import it.")
+        log(f"Fix by hand:  {sys.executable} -m pip install --user cryptography")
+        sys.exit(6)
+
+
 def encrypt_payload(payload: dict, password: str) -> bytes:
     """AES-256-GCM into the BAS1 container the cloud side decrypts.
 
     Kept byte-compatible with encryptState() in src/state-store.mjs: same
     PBKDF2-SHA256 derivation, same 250k iterations, same field order.
     """
-    try:
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    except ImportError:
-        log("ERROR: the 'cryptography' package is required for AES-256-GCM.")
-        log("Install it with:  python3 -m pip install --user cryptography")
-        log("(macOS ships no AES in the Python standard library.)")
-        sys.exit(6)
+    AESGCM = _load_aesgcm()
 
     salt = secrets.token_bytes(16)
     iv = secrets.token_bytes(12)
@@ -307,6 +346,12 @@ def encrypt_payload(payload: dict, password: str) -> bytes:
     # AESGCM.encrypt returns ciphertext||tag, which is exactly the tail layout.
     sealed = AESGCM(key).encrypt(iv, plaintext, None)
     return BAS1_MAGIC + salt + iv + sealed
+
+
+# GitHub reports the calling token's expiry on every authenticated response.
+# Captured here so the export can carry it, letting the briefing warn Ben weeks
+# before the token lapses rather than simply going quiet on the day it does.
+TOKEN_EXPIRY = {"value": ""}
 
 
 def _github_request(cfg: dict, method: str, path: str, body=None):
@@ -326,8 +371,22 @@ def _github_request(cfg: dict, method: str, path: str, body=None):
         },
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
+        expiry = resp.headers.get("github-authentication-token-expiration", "")
+        if expiry:
+            TOKEN_EXPIRY["value"] = expiry.strip()
         raw = resp.read()
     return json.loads(raw.decode("utf-8")) if raw else None
+
+
+def _read_current_sha(cfg: dict, path: str, branch: str):
+    """Blob SHA of the file being replaced, or None on the first ever write."""
+    try:
+        existing = _github_request(cfg, "GET", f"{path}?ref={urllib.parse.quote(branch)}")
+        return existing.get("sha") if isinstance(existing, dict) else None
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
 
 
 def push_to_github(cfg: dict, blob: bytes) -> None:
@@ -335,46 +394,107 @@ def push_to_github(cfg: dict, blob: bytes) -> None:
 
     Uses the API rather than a git checkout so the exporter does not depend on
     the repo being cloned, or on git credentials, on this Mac.
+
+    Retries on the two failures that are not the operator's fault: a transient
+    network error, and a 409 from the branch moving between the SHA read and
+    the write (the daily deploy writes to this same branch). Everything else —
+    a bad token, a missing branch — fails fast, because retrying cannot help
+    and the log should say so plainly.
     """
     repo = cfg["github_repo"]
     branch = cfg.get("github_branch", DEFAULT_BRANCH)
     path = f"/repos/{repo}/contents/{urllib.parse.quote(REMOTE_PATH)}"
+    attempts = 3
 
-    # An update needs the blob SHA it replaces; absence means first write.
-    sha = None
-    try:
-        existing = _github_request(cfg, "GET", f"{path}?ref={urllib.parse.quote(branch)}")
-        if isinstance(existing, dict):
-            sha = existing.get("sha")
-    except urllib.error.HTTPError as exc:
-        if exc.code != 404:
-            log(f"ERROR: could not read current {REMOTE_PATH}: {exc.code} "
-                f"{exc.read().decode('utf-8', 'replace')[:300]}")
+    for attempt in range(1, attempts + 1):
+        try:
+            sha = _read_current_sha(cfg, path, branch)
+            body = {
+                "message": f"iMessage export {datetime.now(timezone.utc).isoformat(timespec='seconds')}",
+                "content": base64.b64encode(blob).decode("ascii"),
+                "branch": branch,
+            }
+            if sha:
+                body["sha"] = sha
+            _github_request(cfg, "PUT", path, body)
+            return
+
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:300]
+            retryable = exc.code in (409, 422, 500, 502, 503, 504)
+            if retryable and attempt < attempts:
+                log(f"push attempt {attempt} got {exc.code} — retrying…")
+                time.sleep(2 ** attempt)
+                continue
+            log(f"ERROR: push of {REMOTE_PATH} failed: {exc.code} {detail}")
+            if exc.code in (401, 403):
+                log("The token is rejected. It must be a fine-grained PAT scoped to")
+                log(f"{repo} with Contents: Read and write, and still be unexpired.")
+                if TOKEN_EXPIRY["value"]:
+                    log(f"GitHub reports this token expires: {TOKEN_EXPIRY['value']}")
+            elif exc.code == 404:
+                log(f"Repository {repo} not found, or the token cannot see it.")
+            elif exc.code == 422:
+                log(f"Branch {branch} may not exist in {repo}.")
             sys.exit(5)
 
-    stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    body = {
-        "message": f"iMessage export {stamp}",
-        "content": base64.b64encode(blob).decode("ascii"),
-        "branch": branch,
-    }
-    if sha:
-        body["sha"] = sha
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            if attempt < attempts:
+                log(f"push attempt {attempt} hit a network error ({exc}) — retrying…")
+                time.sleep(2 ** attempt)
+                continue
+            log(f"ERROR: push of {REMOTE_PATH} failed after {attempts} attempts: {exc}")
+            log("The Mac could not reach api.github.com. The next scheduled run retries.")
+            sys.exit(5)
 
+
+def preflight(cfg: dict) -> None:
+    """Verify the token before doing any work, and capture its expiry.
+
+    Two jobs in one call. It fails fast and legibly on a dead token instead of
+    after reading the whole database and encrypting. And the expiry header only
+    arrives on an authenticated response, so it must be fetched before the
+    payload is built, since the payload carries it to the briefing.
+    """
+    repo = cfg["github_repo"]
     try:
-        _github_request(cfg, "PUT", path, body)
+        info = _github_request(cfg, "GET", f"/repos/{repo}")
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:300]
-        log(f"ERROR: push of {REMOTE_PATH} failed: {exc.code} {detail}")
+        log(f"ERROR: cannot reach {repo}: {exc.code}")
         if exc.code in (401, 403):
-            log("The token is rejected. It must be a fine-grained PAT scoped to")
-            log(f"{repo} with Contents: Read and write, and still be unexpired.")
-        elif exc.code == 409:
-            log("Conflict — the branch moved between read and write. The next")
-            log("scheduled run (2 hours) will retry cleanly.")
-        elif exc.code == 422:
-            log(f"Branch {branch} may not exist in {repo}.")
+            log("The token is invalid, expired, or not scoped to this repository.")
+        elif exc.code == 404:
+            log("Repository not found, or the token cannot see it. Check github_repo.")
         sys.exit(5)
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        log(f"ERROR: could not reach api.github.com: {exc}")
+        log("The next scheduled run retries.")
+        sys.exit(5)
+
+    perms = (info or {}).get("permissions", {})
+    if not (perms.get("push") or perms.get("maintain") or perms.get("admin")):
+        log(f"ERROR: the token can read {repo} but cannot write to it.")
+        log("It needs Contents: Read and write.")
+        sys.exit(5)
+
+
+def token_expiry_note() -> str:
+    """Human-readable warning when the token is close to lapsing, else ''."""
+    raw = TOKEN_EXPIRY["value"]
+    if not raw:
+        return ""
+    for fmt in ("%Y-%m-%d %H:%M:%S %Z", "%Y-%m-%d %H:%M:%S %z", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            when = datetime.strptime(raw, fmt)
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            days = (when - datetime.now(timezone.utc)).days
+            if days <= 30:
+                return f"token expires in {days} days ({raw}) — mint a replacement"
+            return ""
+        except ValueError:
+            continue
+    return ""
 
 
 def main() -> None:
@@ -391,11 +511,21 @@ def main() -> None:
     with_text = sum(1 for m in messages if m["text"])
     log(f"Collected {len(messages)} messages ({with_text} with text content).")
 
+    log("Checking GitHub access…")
+    preflight(cfg)
+
     payload = {
         "version": 1,
         "exportedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "windowHours": window_hours,
         "source": "macos-messages-chat-db",
+        # Carried so the briefing can warn before the token lapses, and so a
+        # diagnosis does not require anyone to be sitting at the Mac.
+        "tokenExpiresAt": TOKEN_EXPIRY["value"],
+        "exporter": {
+            "python": sys.version.split()[0],
+            "host": os.uname().nodename if hasattr(os, "uname") else "",
+        },
         "messages": messages,
     }
 
@@ -411,6 +541,9 @@ def main() -> None:
     branch = cfg.get("github_branch", DEFAULT_BRANCH)
     log(f"Pushing {len(blob)} bytes to {cfg['github_repo']}@{branch}:{REMOTE_PATH}…")
     push_to_github(cfg, blob)
+    note = token_expiry_note()
+    if note:
+        log(f"WARNING: {note}")
     log(f"Done. Published {len(messages)} messages ({with_text} with text).")
 
 
