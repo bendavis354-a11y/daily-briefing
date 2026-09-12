@@ -98,12 +98,82 @@ export function groupConversations(messages, benAccounts) {
   return [...conversations.values()];
 }
 
+/** Distinct addresses across a conversation's From, To and Cc. */
+function participantCount(convo) {
+  const seen = new Set();
+  for (const m of convo.messages || []) {
+    for (const match of String(`${m.from || ''} ${m.to || ''} ${m.cc || ''}`)
+      .matchAll(/[a-z0-9._%+-]+@[a-z0-9.-]+/gi)) {
+      seen.add(match[0].toLowerCase());
+    }
+  }
+  return seen.size;
+}
+
+/**
+ * Where a conversation stands.
+ *
+ * The subtlety is `thread_continued`. "The newest message is not Ben's" is a
+ * sound test for a two-person exchange and a bad one for a committee: he votes,
+ * two colleagues then reply to each other, and the thread reads as though it
+ * were waiting on him. That is why the work accounts looked broken while the
+ * personal one looked fine — nothing differed but the mail. He participates in
+ * most work threads and few personal ones, and this only misfires on threads he
+ * has already spoken in.
+ *
+ * Deliberately narrow. Two-party threads keep reading as waiting on Ben even
+ * when the last word was an acknowledgement, because "thanks, will do" and "so
+ * can you send it?" are not reliably distinguishable, and the cost of wrongly
+ * hiding a real ask is much higher than the cost of listing one he can ignore.
+ */
 export function inferStatus(convo) {
-  const latest = convo.messages[convo.messages.length - 1];
+  const messages = convo.messages || [];
+  const latest = messages[messages.length - 1];
   if (!latest) return 'unknown';
   if (latest.fromMe) return 'waiting_on_other';
   if (looksNoReplyNeeded(latest)) return 'fyi';
+  if (messages.some(m => m.fromMe) && participantCount(convo) > 2) return 'thread_continued';
   return 'waiting_on_ben';
+}
+
+/**
+ * Reconcile one thread's status across the mailboxes it landed in.
+ *
+ * A message reaching both a Workspace mailbox and the personal one can survive
+ * dedupe as two conversations — the copies carry different Gmail ids and no
+ * shared Message-ID. When Ben then answers from the Workspace address, only
+ * that copy holds his reply; the personal copy still looks unanswered and keeps
+ * asking him to do what he has already done.
+ *
+ * So evidence is pooled per thread: if he has demonstrably spoken on it in any
+ * mailbox, no copy of it may read as awaiting his first reply. Only ever
+ * downgrades a nag, never promotes a thread to needing attention, so the worst
+ * case is a thread listed one rank calmer than it might deserve.
+ *
+ * Matched on normalized subject, since the participant sets legitimately differ
+ * between copies (his two addresses). Short subjects are skipped, as "Hi" or
+ * "Thanks" collide across unrelated threads.
+ */
+export function reconcileThreadStatus(convos) {
+  const bySubject = new Map();
+  for (const c of convos) {
+    const subject = normalizeSubject(c.latestMessage?.subject);
+    if (subject.length < 8) continue;
+    if (!bySubject.has(subject)) bySubject.set(subject, []);
+    bySubject.get(subject).push(c);
+  }
+
+  for (const group of bySubject.values()) {
+    if (group.length < 2) continue;
+    const benSpoke = group.some(c =>
+      (c.messages || []).some(m => m.fromMe) || c.status === 'waiting_on_other'
+    );
+    if (!benSpoke) continue;
+    for (const c of group) {
+      if (c.status === 'waiting_on_ben') c.status = 'thread_continued';
+    }
+  }
+  return convos;
 }
 
 function isFromBen(fromHeader, benAccounts) {

@@ -8,7 +8,7 @@ import { getAccessToken } from './google-auth.mjs';
 import { emptyState } from './drive-state.mjs';
 import { loadDurableState } from './state-store.mjs';
 import { scanConfiguredMailboxes, loadConnectorMessages } from './gmail-api.mjs';
-import { dedupeMessages, groupConversations } from './continuity.mjs';
+import { dedupeMessages, groupConversations, reconcileThreadStatus } from './continuity.mjs';
 import { isConnectorAccount } from './accounts.mjs';
 import { loadImessageExport, tokenExpiryWarning, REPAIR_COMMAND } from './imessage-store.mjs';
 import { carryForwardTasks, applyReplyCompletions, retainTasks, dedupeTasks, extractReplyObservations } from './tasks.mjs';
@@ -137,8 +137,10 @@ console.log(`Raw messages: ${allMessages.length} (oauth=${oauthMessages.length},
 const deduped = dedupeMessages(allMessages);
 console.log(`After dedupe: ${deduped.length}`);
 
-const conversations = groupConversations(deduped, benEmails);
+const conversations = reconcileThreadStatus(groupConversations(deduped, benEmails));
 console.log(`Conversations: ${conversations.length}`);
+const continued = conversations.filter(c => c.status === 'thread_continued').length;
+console.log(`Already answered by Ben (thread continued without him): ${continued}`);
 
 // Filter out ignored / snoozed
 const activeConvos = conversations.filter(c => {

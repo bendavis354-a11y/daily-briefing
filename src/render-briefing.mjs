@@ -290,17 +290,37 @@ function outstandingLabel(ts) {
 function responseQueue() {
   const pools = [sections.urgent, sections.business, sections.personal, sections.financial];
   const seen = new Set();
-  const rows = [];
+  const awaiting = [];   // he has never replied in the thread
+  const continued = [];  // he replied; others have since carried on without him
   for (const list of pools) {
     for (const it of list || []) {
-      if (it.status !== 'waiting_on_ben') continue;
+      if (it.status !== 'waiting_on_ben' && it.status !== 'thread_continued') continue;
       const key = it.conversationKey || `${it.sender || ''}|${it.subject || ''}`;
-      if (seen.has(key)) continue;
+      // One thread reaching two mailboxes survives as two conversations with
+      // different keys. Listing it twice is the same nag twice over, so collapse
+      // on subject as well. Short subjects keep their own key, since "Hi" and
+      // "Thanks" collide across unrelated threads.
+      const subject = String(it.subject || '').toLowerCase()
+        .replace(/^((re|fwd?|fw)\s*:\s*)+/i, '').trim();
+      const dedupeKey = subject.length >= 8 ? `subj:${subject}` : key;
+      if (seen.has(key) || seen.has(dedupeKey)) continue;
       seen.add(key);
-      rows.push({ ...it, _key: key, _ts: Date.parse(it.date || '') || null });
+      seen.add(dedupeKey);
+      const row = { ...it, _key: key, _ts: Date.parse(it.date || '') || null };
+      (it.status === 'thread_continued' ? continued : awaiting).push(row);
     }
   }
-  if (!rows.length) {
+
+  const oldestFirst = (a, b) => {
+    if (a._ts && b._ts) return a._ts - b._ts;
+    if (a._ts) return -1;
+    if (b._ts) return 1;
+    return 0;
+  };
+  awaiting.sort(oldestFirst);
+  continued.sort(oldestFirst);
+
+  if (!awaiting.length && !continued.length) {
     return `
   <section class="doc-sec">
     <h2 class="sec-label">4. Correspondence requiring response</h2>
@@ -308,18 +328,25 @@ function responseQueue() {
   </section>`;
   }
 
-  rows.sort((a, b) => {
-    if (a._ts && b._ts) return a._ts - b._ts;
-    if (a._ts) return -1;
-    if (b._ts) return 1;
-    return 0;
-  });
+  // Split rather than suppressed. This section's value is that nothing can be
+  // lost from it, so a thread he has already answered is demoted and labelled,
+  // never dropped — he can still see it, it just stops reading as an instruction.
+  const continuedBlock = continued.length ? `
+    <h3 class="queue-subhead">You have replied — the thread continued without you (${continued.length})</h3>
+    <p class="sec-note">Group threads where your reply is already in and others have since written. No action implied.</p>
+    <ul class="queue queue-muted">${continued.map(queueRow).join('')}</ul>` : '';
+
+  const awaitingBlock = awaiting.length ? `
+    ${continued.length ? '<h3 class="queue-subhead">Awaiting your first reply</h3>' : ''}
+    <ul class="queue">${awaiting.map(queueRow).join('')}</ul>`
+    : '<p class="none">Nothing is awaiting a first reply from you.</p>';
 
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">4. Correspondence requiring response — ${rows.length} thread${rows.length === 1 ? '' : 's'}</h2>
-    <p class="sec-note">All threads awaiting your reply, oldest first.</p>
-    <ul class="queue">${rows.map(queueRow).join('')}</ul>
+    <h2 class="sec-label">4. Correspondence requiring response — ${awaiting.length} thread${awaiting.length === 1 ? '' : 's'}</h2>
+    <p class="sec-note">Threads awaiting your reply, oldest first.</p>
+    ${awaitingBlock}
+    ${continuedBlock}
   </section>`;
 }
 
@@ -671,6 +698,8 @@ button.filter-btn.active { outline:2px solid var(--ink); outline-offset:1px; }
 .t-md { color:#6E5518; }
 .t-lo { color:var(--muted); }
 .t-text { font-size:14.5px; }
+.queue-subhead { font-family:Helvetica,Arial,sans-serif; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:18px 0 6px; font-weight:600; }
+.queue-muted > li { opacity:.72; }
 .t-sub { display:block; font-family:Helvetica,Arial,sans-serif; font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin-top:3px; }
 /* What was actually said. Italic and quoted so it reads as their words, not a
    label; it is often the only context left once the text ages out. */
