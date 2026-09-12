@@ -470,6 +470,9 @@ const trimmedReplies = suggestedReplies.slice(0, 8).map(r => { delete r._isNew; 
 
 // ── STEP 5B: Process iMessages ────────────────────────────────────────────────
 const imessageSection = [];
+// Chat-shaped records handed to the reply detector alongside email
+// conversations; populated only from a FRESH export, never a stale one.
+const imessageConversations = [];
 let imessagesScanned = 0;
 let imessagesActionable = 0;
 
@@ -529,12 +532,31 @@ if (imessageData && imessageStatus === 'fresh') {
       todoText
     });
 
-    // iMessage-derived todo
+    // A pseudo-conversation per chat, shaped like an email conversation, so the
+    // reply detector in STEP 5C can close text items the same way it closes
+    // email ones. The export carries Ben's own outgoing messages, so "he
+    // answered" is observable here — it just needs to be expressed in the shape
+    // applyReplyCompletions already understands.
+    imessageConversations.push({
+      conversationKey: `imsg:${chatKey}`,
+      latestMessage: {
+        fromMe: isFromMe,
+        internalDate: Date.parse(msgDate) || null
+      }
+    });
+
+    // iMessage-derived todo. The conversationKey is what lets it auto-complete;
+    // the context excerpt is what keeps it meaningful once the message itself
+    // drops out of the export's rolling window (48h by default) while the item
+    // lives on for up to 45 days.
     if (todoText) {
+      const excerpt = String(latest.text || latest.body || '').trim();
       todos.push({
         id: `todo-imsg-${chatKey}`,
+        conversationKey: `imsg:${chatKey}`,
         priority,
         text: todoText,
+        context: excerpt ? excerpt.slice(0, 140) : '(no text — attachment or image)',
         status: 'open',
         origin: 'imessage'
       });
@@ -609,7 +631,10 @@ console.log(`iMessages: scanned=${imessagesScanned}, actionable=${imessagesActio
 // page under "Recently completed". Detection uses the full conversation list
 // (pre-ignore/snooze) so a reply on a snoozed thread still completes its task.
 const merged = carryForwardTasks(todos, assistantState.openTasks || []);
-applyReplyCompletions(merged, conversations, now);
+// Email conversations plus the text chats, so a reply by either medium closes
+// its item. extractReplyObservations below deliberately sees only the email
+// list: the habit profile is built from addressed correspondence.
+applyReplyCompletions(merged, [...conversations, ...imessageConversations], now);
 todos.length = 0;
 todos.push(...dedupeTasks(retainTasks(merged, now)));
 const completedNow = todos.filter(t => t.status === 'completed').length;

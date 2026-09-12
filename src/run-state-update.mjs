@@ -89,6 +89,9 @@ for (const t of updateData.todos || []) {
     account: t.account || prior?.account || '',
     conversationKey: t.conversationKey || prior?.conversationKey || '',
     origin: t.origin || prior?.origin || 'email',
+    // Kept deliberately: a text item outlives the rolling export window, and
+    // without this the checklist line loses all trace of what was asked.
+    context: t.context || prior?.context || '',
     addedAt: t.addedAt || prior?.addedAt || now.toISOString(),
     lastSeenAt: now.toISOString(),
     ...(t.status === 'completed' || prior?.status === 'completed'

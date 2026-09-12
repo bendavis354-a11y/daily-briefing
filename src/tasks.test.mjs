@@ -189,4 +189,60 @@ check('distinct asks are not collapsed', () => {
   assert.strictEqual(out.length, 2);
 });
 
+// ── text items close themselves ──────────────────────────────────────────────
+// The export carries Ben's own outgoing texts, so a chat whose latest message
+// is his is evidence he answered. Chats are handed to applyReplyCompletions in
+// the same shape as email conversations, keyed `imsg:<chat>`.
+check('a text item completes once Ben answers in that chat', () => {
+  const tasks = [{
+    id: 'todo-imsg-chat-valeska', conversationKey: 'imsg:chat-valeska',
+    text: 'Reply to iMessage from Valeska', status: 'open', origin: 'imessage', addedAt: iso(3)
+  }];
+  const chat = {
+    conversationKey: 'imsg:chat-valeska',
+    latestMessage: { fromMe: true, internalDate: NOW.getTime() - 2 * 3600 * 1000 }
+  };
+  applyReplyCompletions(tasks, [chat], NOW);
+  assert.strictEqual(tasks[0].status, 'completed');
+  assert.strictEqual(tasks[0].completedBy, 'reply');
+});
+
+check('a text item stays open while the other party still spoke last', () => {
+  const tasks = [{
+    id: 'todo-imsg-chat-jd', conversationKey: 'imsg:chat-jd',
+    text: 'Reply to iMessage from Jean-David', status: 'open', origin: 'imessage', addedAt: iso(3)
+  }];
+  const chat = {
+    conversationKey: 'imsg:chat-jd',
+    latestMessage: { fromMe: false, internalDate: NOW.getTime() - 3600 * 1000 }
+  };
+  applyReplyCompletions(tasks, [chat], NOW);
+  assert.strictEqual(tasks[0].status, 'open');
+});
+
+check('a text item survives the chat dropping out of the export window', () => {
+  // Day 4 with no traffic in that chat: no record is produced for it at all.
+  const tasks = [{
+    id: 'todo-imsg-chat-gone', conversationKey: 'imsg:chat-gone',
+    text: 'Reply to iMessage from Ellie', status: 'open', origin: 'imessage',
+    context: 'are we still on for thursday', addedAt: iso(3)
+  }];
+  applyReplyCompletions(tasks, [], NOW);
+  const kept = retainTasks(tasks, NOW);
+  assert.strictEqual(kept.length, 1, 'the ask outlives the 48h export window');
+  assert.strictEqual(kept[0].status, 'open');
+  assert.strictEqual(kept[0].context, 'are we still on for thursday', 'and keeps its context');
+});
+
+check('text and email keys cannot collide', () => {
+  const tasks = [
+    { id: 'a', conversationKey: 'imsg:+15185551212', text: 'text', status: 'open', addedAt: iso(2) },
+    { id: 'b', conversationKey: '<abc@mail>', text: 'email', status: 'open', addedAt: iso(2) }
+  ];
+  const convos = [{ conversationKey: '<abc@mail>', latestMessage: { fromMe: true, internalDate: NOW.getTime() } }];
+  applyReplyCompletions(tasks, convos, NOW);
+  assert.strictEqual(tasks[0].status, 'open', 'the text item is untouched by an email reply');
+  assert.strictEqual(tasks[1].status, 'completed');
+});
+
 console.log(`\n${passed} checks passed.`);

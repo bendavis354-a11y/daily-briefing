@@ -212,7 +212,7 @@ function actionItems() {
   return `
   <section class="doc-sec">
     <h2 class="sec-label">3. Action items — <span id="task-open-count">${open.length}</span> open</h2>
-    <p class="sec-note">Checked items clear; your email replies check items automatically. <button type="button" class="link-btn" id="task-toggle" onclick="toggleCompleted()">Show completed</button></p>
+    <p class="sec-note">Checked items clear; your replies, by email or text, check items automatically. <button type="button" class="link-btn" id="task-toggle" onclick="toggleCompleted()">Show completed</button></p>
     <ul class="tasks hide-done" id="task-list">
       ${open.map(taskRow).join('')}
       ${done.length ? `<li class="tasks-subhead">Recently completed</li>${done.map(completedRow).join('')}` : ''}
@@ -255,11 +255,15 @@ function taskRow(t, i) {
     age ? `outstanding ${age}` : '',
     t.origin === 'imessage' ? 'from messages' : ''
   ].filter(Boolean).join(' · ');
+  // The excerpt is the only surviving trace of a text once it ages out of the
+  // export window, so it is rendered even when the message itself is long gone.
+  const ctx = String(t.context || '').trim();
   return `<li class="task" data-account="${escAttr((t.account || '').toLowerCase())}" data-task-id="${escAttr(id)}">
     <input type="checkbox" class="t-check" id="${domId}" data-task-id="${escAttr(id)}" onchange="toggleTask(this)">
     <label class="t-label" for="${domId}">
       <span class="t-pri ${priCls}">${esc(pri)}</span>
       <span class="t-text">${esc(t.text || '')}</span>
+      ${ctx ? `<span class="t-ctx">${esc(ctx)}</span>` : ''}
       <span class="t-sub">${esc(meta)}</span>
     </label>
     ${href ? extA(href, 'doc-link', 'Open thread →') : ''}
@@ -668,6 +672,11 @@ button.filter-btn.active { outline:2px solid var(--ink); outline-offset:1px; }
 .t-lo { color:var(--muted); }
 .t-text { font-size:14.5px; }
 .t-sub { display:block; font-family:Helvetica,Arial,sans-serif; font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin-top:3px; }
+/* What was actually said. Italic and quoted so it reads as their words, not a
+   label; it is often the only context left once the text ages out. */
+.t-ctx { display:block; font-size:12.5px; font-style:italic; color:var(--muted); margin-top:3px; line-height:1.4; }
+.t-ctx::before { content:'“'; }
+.t-ctx::after { content:'”'; }
 .task.done .t-text { text-decoration:line-through; }
 .task.done { opacity:.5; }
 .queue { list-style:none; }
