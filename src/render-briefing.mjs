@@ -9,7 +9,8 @@
  *   OVERVIEW         — the bottom line (1–3 sentence BLUF plus key points)
  *                       beside a seven-day calendar card: the week from today,
  *                       tomorrow emphasised because the brief is read in the
- *                       evening; multi-day all-day events shown as spans
+ *                       evening; multi-day all-day events shown as spans;
+ *                       proposed calendar entries directly beneath the week
  *   1. BOTTOM LINE   — inside the overview
  *   2. PRIORITY ITEMS — numbered; Background / Development / Assessment /
  *                       Action; status + account designators; thread link
@@ -19,9 +20,8 @@
  *                       a reply, oldest first; derived from the scan (not from
  *                       the analysis step) so nothing can be dropped by
  *                       editorial judgment; newsletters and spam excluded
- *   5. PROPOSED CALENDAR ENTRIES — only when the scan proposed any
- *   6. OTHER DEVELOPMENTS — one-line items
- *   7. ROUTINE TRAFFIC — one-line disposition of the compressed mass
+ *   5. OTHER DEVELOPMENTS — one-line items
+ *   6. ROUTINE TRAFFIC — one-line disposition of the compressed mass
  *   Appendix         — full categorized traffic, collapsed
  *
  * Sections after the first are numbered in the order they render, so an
@@ -296,7 +296,22 @@ function calendarCard() {
       </div>
       ${spanRows ? `<div class="cal-spans">${spanRows}</div>` : ''}
       <div class="cal-days">${dayRows}</div>
+      ${proposedEntries()}
     </aside>`;
+}
+
+// What the scan proposed adding, directly under the week it would join. Each
+// has a time picker and a link that opens a pre-filled Google Calendar form;
+// nothing is added until Ben confirms it there.
+function proposedEntries() {
+  const proposals = sections.calendarProposals || [];
+  if (!proposals.length) return '';
+  return `
+      <div class="cal-proposals">
+        <div class="cal-head"><span class="sec-label cal-title">Proposed entries</span><span class="cal-range">${proposals.length} from messages</span></div>
+        <p class="cal-note">Suggested by the scan from messages proposing to meet. Nothing is added until you confirm it in Calendar.</p>
+        ${proposals.map(proposalRow).join('')}
+      </div>`;
 }
 
 // A location that is a meeting URL is shown as its host ("zoom.us"): the chip
@@ -586,26 +601,13 @@ function field(label, text) {
   return `<p class="field"><span class="field-label">${label} —</span> ${esc(text)}</p>`;
 }
 
-// The week's commitments themselves live in the overview card at the top; this
-// section keeps only what the scan proposed adding, each with a time picker
-// and a link that opens a pre-filled Google Calendar form for Ben to confirm.
-function proposedEntries() {
-  const proposals = sections.calendarProposals || [];
-  if (!proposals.length) return '';
-  return `
-  <section class="doc-sec">
-    <h2 class="sec-label">${nextSection()}. Proposed calendar entries</h2>
-    <p class="sec-note">Suggested by the scan from messages proposing to meet. Nothing is added until you confirm it in Calendar.</p>
-    ${proposals.map(proposalRow).join('')}
-  </section>`;
-}
-
 function proposalRow(p, i) {
   const id = `prop-${i}`;
   const start = p.start || defaultStart();
   const href = calendarTemplateLink({ title: p.title, start, end: p.end || '', details: p.context || p.detail, location: p.location });
   return `<div class="proposal" data-account="${escAttr((p.account || '').toLowerCase())}">
-    <div class="proposal-line">${acctTag(p.account)}<strong>${esc(p.title)}</strong>${p.context ? ` — ${esc(p.context)}` : ''}</div>
+    <div class="proposal-line">${acctTag(p.account)}<strong>${esc(p.title)}</strong></div>
+    ${p.context ? `<div class="proposal-ctx">${esc(p.context)}</div>` : ''}
     <div class="proposal-controls">
       <input type="datetime-local" id="${id}-start" value="${escAttr(toLocalInput(start))}" onchange="updateCalLink('${id}')">
       <a id="${id}-link" class="doc-link" href="${escAttr(href)}" target="_blank" rel="noopener"
@@ -727,7 +729,6 @@ const html = `<!DOCTYPE html>
     ${priorityItems()}
     ${actionItems()}
     ${responseQueue()}
-    ${proposedEntries()}
     ${otherDevelopments()}
     ${routineTraffic()}
     ${appendix()}
@@ -764,11 +765,18 @@ function toLocalInput(iso) {
   const o = Object.fromEntries(p.map(x => [x.type, x.value]));
   return `${o.year}-${o.month}-${o.day}T${o.hour}:${o.minute}`;
 }
+// 9:00 tomorrow morning in the briefing's own time zone, not the machine's:
+// the run happens on a server whose clock is UTC.
 function defaultStart() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(9, 0, 0, 0);
-  return d.toISOString();
+  const day = addDaysISO(meta.date || todayISO, 1);
+  const guess = new Date(`${day}T09:00:00Z`);
+  try {
+    const off = new Intl.DateTimeFormat('en-US', { timeZone: TZ, timeZoneName: 'longOffset' })
+      .formatToParts(guess).find(p => p.type === 'timeZoneName')?.value || '';
+    const m = off.match(/([+-])(\d{2}):(\d{2})/);
+    if (m) return new Date(`${day}T09:00:00${m[1]}${m[2]}:${m[3]}`).toISOString();
+  } catch { /* fall through to the UTC guess */ }
+  return guess.toISOString();
 }
 
 // ── styles: restrained document typography ───────────────────────────────────
@@ -873,10 +881,15 @@ a.cal-ev:hover .cal-name { text-decoration:underline; }
 
 .none { color:var(--muted); font-style:italic; }
 
-.proposal { padding:9px 0; border-bottom:1px dotted var(--rule-light); font-size:14.5px; }
-.proposal-line { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
-.proposal-controls { display:flex; gap:14px; margin-top:7px; align-items:center; flex-wrap:wrap; }
-.proposal-controls input { font-family:Helvetica,Arial,sans-serif; font-size:12.5px; padding:4px 7px; border:1px solid var(--rule); background:var(--paper); color:var(--ink); }
+/* Proposed entries sit under the week, in the same narrow column. */
+.cal-proposals { margin-top:18px; }
+.cal-note { font-family:Georgia,serif; font-size:12px; font-style:italic; color:var(--muted); line-height:1.4; margin:0 0 4px; }
+.proposal { padding:8px 0; border-bottom:1px solid var(--rule-light); font-family:Georgia,serif; font-size:13.5px; }
+.proposal:last-child { border-bottom:none; }
+.proposal-line { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; line-height:1.3; }
+.proposal-ctx { font-size:12px; color:var(--muted); line-height:1.35; margin-top:2px; }
+.proposal-controls { display:flex; gap:10px 14px; margin-top:6px; align-items:center; flex-wrap:wrap; }
+.proposal-controls input { font-family:var(--sans); font-size:11.5px; padding:3px 6px; border:1px solid var(--rule); background:var(--paper); color:var(--ink); max-width:100%; }
 
 .sec-note { font-size:12.5px; color:var(--muted); font-style:italic; margin:-6px 0 10px; }
 .link-btn { background:none; border:none; padding:0; font:inherit; font-style:normal; color:var(--await); text-decoration:underline; cursor:pointer; }
