@@ -174,12 +174,15 @@ function overview() {
   const b = brief || fallbackBrief();
   return `
   <section class="overview">
-    <div class="ov-bluf">
-      <h2 class="sec-label">1. Bottom line</h2>
-      <p class="bluf">${esc(b.bottomLine)}</p>
-      ${b.keyPoints?.length ? `<ul class="keypoints">${b.keyPoints.map(k => `<li>${esc(k)}</li>`).join('')}</ul>` : ''}
+    <div class="ov-grid">
+      <div class="ov-bluf">
+        <h2 class="sec-label">1. Bottom line</h2>
+        <p class="bluf">${esc(b.bottomLine)}</p>
+        ${b.keyPoints?.length ? `<ul class="keypoints">${b.keyPoints.map(k => `<li>${esc(k)}</li>`).join('')}</ul>` : ''}
+      </div>
+      ${calendarCard()}
     </div>
-    ${calendarCard()}
+    ${proposedEntries()}
   </section>`;
 }
 
@@ -296,22 +299,24 @@ function calendarCard() {
       </div>
       ${spanRows ? `<div class="cal-spans">${spanRows}</div>` : ''}
       <div class="cal-days">${dayRows}</div>
-      ${proposedEntries()}
     </aside>`;
 }
 
-// What the scan proposed adding, directly under the week it would join. Each
-// has a time picker and a link that opens a pre-filled Google Calendar form;
+// What the scan proposed adding, in a row of cards directly under the week it
+// would join — full width, so the overview's two columns stay level. Each has
+// a time picker and a link that opens a pre-filled Google Calendar form;
 // nothing is added until Ben confirms it there.
 function proposedEntries() {
   const proposals = sections.calendarProposals || [];
   if (!proposals.length) return '';
   return `
-      <div class="cal-proposals">
-        <div class="cal-head"><span class="sec-label cal-title">Proposed entries</span><span class="cal-range">${proposals.length} from messages</span></div>
-        <p class="cal-note">Suggested by the scan from messages proposing to meet. Nothing is added until you confirm it in Calendar.</p>
-        ${proposals.map(proposalRow).join('')}
-      </div>`;
+    <div class="cal-proposals">
+      <div class="cal-head">
+        <span class="sec-label cal-title">Proposed calendar entries</span>
+        <span class="cal-range">${proposals.length} from messages · nothing is added until you confirm it in Calendar</span>
+      </div>
+      <div class="proposal-grid">${proposals.map(proposalRow).join('')}</div>
+    </div>`;
 }
 
 // A location that is a meeting URL is shown as its host ("zoom.us"): the chip
@@ -823,8 +828,9 @@ button.filter-btn.active { outline:2px solid var(--ink); outline-offset:1px; }
 .subsec-label { font-family:Helvetica,Arial,sans-serif; font-size:10.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin:16px 0 8px; }
 
 /* ── overview: bottom line beside the week ── */
-.overview { display:grid; grid-template-columns:minmax(0,1fr) 272px; gap:0 32px; margin-top:26px; }
-@media (max-width:640px){ .overview { grid-template-columns:1fr; gap:24px 0; } }
+.overview { margin-top:26px; }
+.ov-grid { display:grid; grid-template-columns:minmax(0,1fr) 272px; gap:0 32px; }
+@media (max-width:640px){ .ov-grid { grid-template-columns:1fr; gap:24px 0; } }
 .ov-bluf { min-width:0; }
 .bluf { font-size:17.5px; line-height:1.5; font-weight:400; }
 .keypoints { list-style:none; margin:14px 0 0; padding:0; border-top:1px solid var(--rule-light); }
@@ -881,15 +887,15 @@ a.cal-ev:hover .cal-name { text-decoration:underline; }
 
 .none { color:var(--muted); font-style:italic; }
 
-/* Proposed entries sit under the week, in the same narrow column. */
-.cal-proposals { margin-top:18px; }
-.cal-note { font-family:Georgia,serif; font-size:12px; font-style:italic; color:var(--muted); line-height:1.4; margin:0 0 4px; }
-.proposal { padding:8px 0; border-bottom:1px solid var(--rule-light); font-family:Georgia,serif; font-size:13.5px; }
-.proposal:last-child { border-bottom:none; }
+/* Proposed entries: a full-width row of cards under the week. */
+.cal-proposals { margin-top:24px; font-family:var(--sans); }
+.cal-proposals .cal-range { text-transform:none; letter-spacing:.02em; }
+.proposal-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:12px; margin-top:10px; }
+.proposal { display:flex; flex-direction:column; gap:4px; padding:10px 12px 11px; border:1px solid var(--rule-light); border-top:2px solid var(--rule); font-family:Georgia,serif; font-size:13.5px; min-width:0; }
 .proposal-line { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; line-height:1.3; }
-.proposal-ctx { font-size:12px; color:var(--muted); line-height:1.35; margin-top:2px; }
-.proposal-controls { display:flex; gap:10px 14px; margin-top:6px; align-items:center; flex-wrap:wrap; }
-.proposal-controls input { font-family:var(--sans); font-size:11.5px; padding:3px 6px; border:1px solid var(--rule); background:var(--paper); color:var(--ink); max-width:100%; }
+.proposal-ctx { font-family:var(--sans); font-size:11px; color:var(--muted); line-height:1.35; }
+.proposal-controls { display:flex; flex-direction:column; gap:6px; margin-top:auto; padding-top:6px; align-items:flex-start; }
+.proposal-controls input { font-family:var(--sans); font-size:10.5px; padding:3px 4px; border:1px solid var(--rule); background:var(--paper); color:var(--ink); width:100%; min-width:0; }
 
 .sec-note { font-size:12.5px; color:var(--muted); font-style:italic; margin:-6px 0 10px; }
 .link-btn { background:none; border:none; padding:0; font:inherit; font-style:normal; color:var(--await); text-decoration:underline; cursor:pointer; }
