@@ -16,11 +16,17 @@ Ben operates three accounts, and every item must carry its designator:
   arrive as `imessages.enc` on the `claude/briefing` branch, pushed by the Mac
   exporter and read by the scripts — no Drive or Google token involved.
 
-This routine runs daily at 7:00 AM America/New_York as an agent session with
+This routine runs daily at 5:00 PM America/New_York as an agent session with
 the Gmail connector plus this repo's Node scripts. Assistant memory lives as an
 encrypted file (`state.enc`) on the `claude/briefing` branch of this repo — the
 scripts read and write it directly; no Drive connector or Google token is
 involved in memory, and you never copy file contents by hand.
+
+The document is written for an evening read, so its schedule section covers
+**tomorrow**, not today. Between runs a background job republishes the volatile
+facts every ten minutes, and the page's "Check for updates" button pulls them —
+so the analysis you write is the part that must hold all evening. Write it to
+stay true: judgement and stakes, not a snapshot of who has replied.
 
 ## CRITICAL RULES
 - **Never draft, suggest, or pre-write any reply or response.** No suggested
@@ -177,6 +183,7 @@ If the build fails, fix the brief and retry. Never deploy a broken page.
 ```bash
 node src/run-state-update.mjs   # merges the run into memory, writes encrypted state.enc
 node src/deploy-briefing.mjs    # commits index.html + .nojekyll + state.enc to claude/briefing and pushes
+node src/refresh-status.mjs     # publishes status.enc so the page's refresh button has facts newer than the brief
 ```
 That single push publishes the briefing AND persists memory. Never push to
 `main`. Do not hand-copy any state content — the scripts own the bytes.

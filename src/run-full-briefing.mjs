@@ -48,14 +48,17 @@ const todayISO = localDate(now, TZ);
 const tomorrowISO = localDate(addDays(now, 1), TZ);
 const NY_OFFSET = nyOffset(now);
 
-// The brief runs in the morning, so section 5 covers TODAY. The briefing JSON
-// keys stay `tomorrowSchedule` / `eventsTomorrow` / `tomorrowLabel` because the
-// schema and five other consumers read those names; only the day they describe
-// has changed.
-const scheduleISO = todayISO;
+// The brief is written at 5pm for an evening read, so section 5 covers
+// TOMORROW — by the time he opens it, today's commitments are behind him. It
+// covered today while the run was at 7am. The briefing JSON keys stay
+// `tomorrowSchedule` / `eventsTomorrow` / `tomorrowLabel` throughout, because
+// the schema and five other consumers read those names; only the day they
+// describe has moved. BRIEFING_SCHEDULE_DAY=today restores the morning
+// behaviour without a code change.
+const scheduleISO = process.env.BRIEFING_SCHEDULE_DAY === 'today' ? todayISO : tomorrowISO;
 const scheduleMin = `${scheduleISO}T00:00:00${NY_OFFSET}`;
 const scheduleMax = `${scheduleISO}T23:59:59${NY_OFFSET}`;
-const weekMin = `${todayISO}T00:00:00${NY_OFFSET}`;
+const weekMin = `${todayISO}T00:00:00${NY_OFFSET}`;  // the week always starts today
 const weekMax = `${localDate(addDays(now, 6), TZ)}T23:59:59${NY_OFFSET}`;
 
 console.log(`STEP 1: today=${todayISO}  schedule day=${scheduleISO}  offset=${NY_OFFSET}  week window=${weekMin} to ${weekMax}`);
@@ -699,7 +702,7 @@ const briefing = {
     dataFreshThrough: generatedAt,
     liveUrl,
     todayLabel: formatDateLabel(now, TZ),
-    tomorrowLabel: formatDateLabel(now, TZ)
+    tomorrowLabel: formatDateLabel(scheduleISO === todayISO ? now : addDays(now, 1), TZ)
   },
   stats: {
     emailsScanned: deduped.length,

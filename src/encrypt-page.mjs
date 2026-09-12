@@ -77,6 +77,12 @@ const shell = `<!DOCTYPE html>
         );
         const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, encryptedAndTag);
         const html = new TextDecoder().decode(decrypted);
+        // Hand the key to the document being written, so its refresh button can
+        // open the separately-published fact file without prompting again.
+        // sessionStorage is scoped to this tab and cleared when it closes; the
+        // decrypted briefing is already in this DOM, so this widens nothing
+        // that an attacker on this page could not already read.
+        try { sessionStorage.setItem('briefing.key', pw); } catch (e) {}
         document.open();
         document.write(html);
         document.close();

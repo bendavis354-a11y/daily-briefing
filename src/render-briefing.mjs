@@ -258,7 +258,8 @@ function taskRow(t, i) {
   // The excerpt is the only surviving trace of a text once it ages out of the
   // export window, so it is rendered even when the message itself is long gone.
   const ctx = String(t.context || '').trim();
-  return `<li class="task" data-account="${escAttr((t.account || '').toLowerCase())}" data-task-id="${escAttr(id)}">
+  return `<li class="task" data-account="${escAttr((t.account || '').toLowerCase())}" data-task-id="${escAttr(id)}"
+      data-convkey="${escAttr(t.conversationKey || '')}">
     <input type="checkbox" class="t-check" id="${domId}" data-task-id="${escAttr(id)}" onchange="toggleTask(this)">
     <label class="t-label" for="${domId}">
       <span class="t-pri ${priCls}">${esc(pri)}</span>
@@ -354,7 +355,12 @@ function queueRow(r) {
   const href = threadLink(r.viewThreadAccount || r.account, r.viewThreadId || r.gmailThreadId);
   const num = itemNumberByKey.get(r._key);
   const age = waitingLabel(r._ts);
-  return `<li data-account="${escAttr((r.account || '').toLowerCase())}">
+  const subjKey = String(r.subject || '').toLowerCase()
+    .replace(/^((re|fwd?|fw)\s*:\s*)+/i, '').trim();
+  return `<li data-account="${escAttr((r.account || '').toLowerCase())}"
+      data-convkey="${escAttr(r._key || '')}"
+      data-subjkey="${escAttr(subjKey.length >= 8 ? subjKey : '')}"
+      data-status="${escAttr(r.status || '')}">
     <div class="q-main">
       ${acctTag(r.account)}
       <span class="q-sender">${esc(r.senderName || r.sender || 'Unknown sender')}</span>
@@ -560,6 +566,7 @@ const html = `<!DOCTYPE html>
 <body>
   <main class="doc">
     ${masthead()}
+    ${refreshBar()}
     ${isStale ? staleWarning() : ''}
     ${filterBar()}
     ${bottomLine()}
@@ -698,6 +705,19 @@ button.filter-btn.active { outline:2px solid var(--ink); outline-offset:1px; }
 .t-md { color:#6E5518; }
 .t-lo { color:var(--muted); }
 .t-text { font-size:14.5px; }
+.refresh-bar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 22px; padding:10px 14px; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
+.rb-state { font-family:Helvetica,Arial,sans-serif; font-size:11.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+.rb-state.rb-fresh { color:var(--accent); }
+.rb-state.rb-error { color:#B83A3A; }
+.rb-btn { font-family:Helvetica,Arial,sans-serif; font-size:12px; font-weight:600; padding:6px 12px; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--text); cursor:pointer; margin-left:auto; }
+.rb-btn:hover { background:var(--bg); }
+.rb-btn[disabled] { opacity:.5; cursor:default; }
+.q-answered .q-subject, .q-answered .q-sender { text-decoration:line-through; opacity:.6; }
+.q-answered-tag { font-family:Helvetica,Arial,sans-serif; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); margin-left:8px; }
+.new-since { margin-top:16px; }
+.new-since li { padding:6px 0; border-bottom:1px solid var(--border); font-size:13.5px; }
+.new-since .ns-sender { font-weight:600; }
+.new-since .ns-subject { color:var(--muted); }
 .queue-subhead { font-family:Helvetica,Arial,sans-serif; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:18px 0 6px; font-weight:600; }
 .queue-muted > li { opacity:.72; }
 .t-sub { display:block; font-family:Helvetica,Arial,sans-serif; font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin-top:3px; }
@@ -732,6 +752,25 @@ footer { max-width:720px; margin:0 auto; padding:16px 44px 40px; font-family:Hel
 }
 
 // ── client JS ────────────────────────────────────────────────────────────────
+/**
+ * The live-facts control.
+ *
+ * The analysis below is written once a day and stays true; the facts under it
+ * rot as soon as Ben answers something. A background job republishes just those
+ * facts every few minutes, and this pulls the newest set on demand, so a brief
+ * read at 9pm can be told which of its asks he has already dealt with.
+ *
+ * Reports its own ignorance honestly: if the job has died, the line says how
+ * old the facts are rather than implying they are current.
+ */
+function refreshBar() {
+  return `
+  <div class="refresh-bar" id="refresh-bar">
+    <span class="rb-state" id="rb-state">Facts as written, ${esc(fmtTime(meta.generatedAt))} ET</span>
+    <button type="button" class="rb-btn" id="rb-btn" onclick="refreshFacts()">Check for updates</button>
+  </div>`;
+}
+
 function clientJs() {
   return `
 function filterAccount(btn) {
@@ -761,6 +800,191 @@ function updateCalLink(id) {
 }
 function addToSchedule(id) {
   return true; // navigation proceeds via the <a target="_blank">
+}
+
+// ── live facts ───────────────────────────────────────────────────────────────
+// Pulls the newest published fact set and reconciles this document against it.
+// The analysis stays as written; only thread standing, action items and the
+// count of new arrivals move. Everything is decided here rather than in the
+// job, because this side is the only one that knows what it is displaying.
+var STATUS_URL = 'status.enc';
+var BRIEF_GENERATED_AT = ${JSON.stringify(String(meta.generatedAt || ''))};
+
+function rbSay(text, cls) {
+  var el = document.getElementById('rb-state');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'rb-state' + (cls ? ' ' + cls : '');
+}
+
+function b64ToBytesLocal(b64) {
+  var bin = atob(b64);
+  var out = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/** BAS1 container: "BAS1" | salt(16) | iv(12) | ciphertext | tag(16). */
+async function decryptBas1(bytes, password) {
+  if (bytes.length < 48 || String.fromCharCode.apply(null, bytes.slice(0, 4)) !== 'BAS1') {
+    throw new Error('not a BAS1 blob');
+  }
+  var salt = bytes.slice(4, 20);
+  var iv = bytes.slice(20, 32);
+  var body = bytes.slice(32);
+  var material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  var key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: salt, iterations: 250000, hash: 'SHA-256' },
+    material, { name: 'AES-GCM', length: 256 }, false, ['decrypt']
+  );
+  var plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, body);
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+function normSubject(s) {
+  return String(s || '').toLowerCase().replace(/^((re|fwd?|fw)\s*:\s*)+/i, '').trim();
+}
+
+async function refreshFacts() {
+  var btn = document.getElementById('rb-btn');
+  var pw = null;
+  try { pw = sessionStorage.getItem('briefing.key'); } catch (e) {}
+  if (!pw) { rbSay('Reload the page and unlock it to check for updates', 'rb-error'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  rbSay('Checking…');
+  try {
+    // Cache-busted: GitHub Pages will happily serve a stale copy otherwise,
+    // which is the one failure that would silently defeat the whole feature.
+    var res = await fetch(STATUS_URL + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('status ' + res.status);
+    var buf = new Uint8Array(await res.arrayBuffer());
+    var facts = await decryptBas1(buf, pw);
+    // Right after the daily run the published facts can predate the briefing
+    // itself. Applying them would walk the document backwards, so say so
+    // instead. The refresh job will overtake within a few minutes.
+    var factsAt = Date.parse(facts.generatedAt) || 0;
+    var briefAt = Date.parse(BRIEF_GENERATED_AT) || 0;
+    if (briefAt && factsAt && factsAt < briefAt) {
+      rbSay('The briefing is newer than the last fact check — nothing to add');
+      return;
+    }
+    applyFacts(facts);
+  } catch (e) {
+    rbSay('Could not reach the live facts — showing the briefing as written', 'rb-error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Check for updates'; }
+  }
+}
+
+function applyFacts(facts) {
+  var byKey = {}, answeredSubjects = {};
+  var threads = facts.threads || [];
+  for (var i = 0; i < threads.length; i++) {
+    var t = threads[i];
+    byKey[t.key] = t;
+    // Pool by subject as the pipeline does, so a reply sent from a Workspace
+    // address also settles the personal copy of the same thread — which this
+    // job cannot see directly.
+    if (t.latestFromMe || t.status === 'waiting_on_other' || t.status === 'thread_continued') {
+      var sk = normSubject(t.subject);
+      if (sk.length >= 8) answeredSubjects[sk] = true;
+    }
+  }
+
+  var settled = 0;
+  var rows = document.querySelectorAll('.queue li[data-convkey]');
+  for (var r = 0; r < rows.length; r++) {
+    var row = rows[r];
+    if (row.getAttribute('data-status') !== 'waiting_on_ben') continue;
+    var t2 = byKey[row.getAttribute('data-convkey')];
+    var subjHit = answeredSubjects[row.getAttribute('data-subjkey') || '\u0000'];
+    var nowAnswered = (t2 && (t2.latestFromMe || t2.status !== 'waiting_on_ben')) || subjHit;
+    if (!nowAnswered) continue;
+    row.classList.add('q-answered');
+    row.setAttribute('data-status', 'answered');
+    if (!row.querySelector('.q-answered-tag')) {
+      var tag = document.createElement('span');
+      tag.className = 'q-answered-tag';
+      tag.textContent = 'answered since';
+      var main = row.querySelector('.q-main');
+      if (main) main.appendChild(tag);
+    }
+    settled++;
+  }
+
+  // A reply on the thread also completes the action item that asked for it.
+  var ticked = 0;
+  var tasks = document.querySelectorAll('.task[data-convkey]');
+  for (var k = 0; k < tasks.length; k++) {
+    var task = tasks[k];
+    if (task.classList.contains('done')) continue;
+    var key = task.getAttribute('data-convkey');
+    if (!key) continue;
+    var t3 = byKey[key];
+    if (!t3 || !t3.latestFromMe) continue;
+    var box = task.querySelector('.t-check');
+    if (box && !box.checked) { box.checked = true; toggleTask(box); }
+    ticked++;
+  }
+
+  var arrived = countNewSince(threads);
+  var when = new Date(facts.generatedAt);
+  var stamp = isNaN(when) ? 'just now' : when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  var parts = ['Facts as of ' + stamp];
+  if (settled) parts.push(settled + ' answered since');
+  if (ticked) parts.push(ticked + ' item' + (ticked === 1 ? '' : 's') + ' cleared');
+  if (arrived) parts.push(arrived + ' new');
+  if (!settled && !ticked && !arrived) parts.push('nothing has changed');
+  rbSay(parts.join(' · '), 'rb-fresh');
+}
+
+/**
+ * Threads whose newest message postdates this briefing and which it never
+ * mentioned. Listed as bare facts: the job is deterministic code and cannot
+ * judge whether any of them matter, so they are kept apart from the analysis
+ * rather than mixed into it.
+ */
+function countNewSince(threads) {
+  var known = {};
+  var seen = document.querySelectorAll('[data-convkey]');
+  for (var i = 0; i < seen.length; i++) known[seen[i].getAttribute('data-convkey')] = true;
+
+  var cutoff = Date.parse(BRIEF_GENERATED_AT) || 0;
+  var fresh = [];
+  for (var j = 0; j < threads.length; j++) {
+    var t = threads[j];
+    if (known[t.key]) continue;
+    if (t.latestFromMe) continue;
+    if (t.status === 'fyi' || t.status === 'unknown') continue;
+    var at = Date.parse(t.latestDate) || 0;
+    if (!cutoff || at <= cutoff) continue;
+    fresh.push(t);
+  }
+  fresh.sort(function (a, b) { return Date.parse(b.latestDate) - Date.parse(a.latestDate); });
+  renderNewSince(fresh);
+  return fresh.length;
+}
+
+function renderNewSince(list) {
+  var host = document.getElementById('new-since');
+  if (!host) {
+    var queue = document.querySelector('.doc-sec .queue');
+    if (!queue) return;
+    host = document.createElement('div');
+    host.id = 'new-since';
+    host.className = 'new-since';
+    queue.parentNode.appendChild(host);
+  }
+  if (!list.length) { host.innerHTML = ''; return; }
+  var html = '<h3 class="queue-subhead">Arrived since this briefing (' + list.length + ')</h3><ul>';
+  for (var i = 0; i < list.length; i++) {
+    var t = list[i];
+    var sender = String(t.sender || '').replace(/[<>&]/g, '');
+    var subject = String(t.subject || '(no subject)').replace(/[<>&]/g, '');
+    html += '<li><span class="ns-sender">' + sender + '</span> — <span class="ns-subject">' + subject + '</span></li>';
+  }
+  host.innerHTML = html + '</ul><p class="sec-note">Not weighed by the analysis above, which was written earlier.</p>';
 }
 
 // ── action item completion ──────────────────────────────────────────────────
