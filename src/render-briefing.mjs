@@ -6,7 +6,11 @@
  * upcoming decision) and BLUF memo structure (bottom line first, compressed
  * background, supporting detail relegated to an appendix):
  *
- *   1. BOTTOM LINE   — 1–3 sentence BLUF plus key points
+ *   OVERVIEW         — the bottom line (1–3 sentence BLUF plus key points)
+ *                       beside a seven-day calendar card: the week from today,
+ *                       tomorrow emphasised because the brief is read in the
+ *                       evening; multi-day all-day events shown as spans
+ *   1. BOTTOM LINE   — inside the overview
  *   2. PRIORITY ITEMS — numbered; Background / Development / Assessment /
  *                       Action; status + account designators; thread link
  *   3. ACTION ITEMS  — persistent checklist; items carry forward across days
@@ -15,10 +19,13 @@
  *                       a reply, oldest first; derived from the scan (not from
  *                       the analysis step) so nothing can be dropped by
  *                       editorial judgment; newsletters and spam excluded
- *   5. SCHEDULE      — the day's commitments, proposed calendar entries
+ *   5. PROPOSED CALENDAR ENTRIES — only when the scan proposed any
  *   6. OTHER DEVELOPMENTS — one-line items
  *   7. ROUTINE TRAFFIC — one-line disposition of the compressed mass
  *   Appendix         — full categorized traffic, collapsed
+ *
+ * Sections after the first are numbered in the order they render, so an
+ * omitted section never leaves a gap.
  *
  * No reply drafting anywhere: every item links to the source thread; Ben
  * composes his own responses. Reads briefing.json (facts + `brief` written by
@@ -131,24 +138,188 @@ function masthead() {
   </header>`;
 }
 
-function filterBar() {
+/**
+ * One strip for the two page controls: the live-facts state with its button on
+ * the left, the account filter on the right. They used to be two stacked bars;
+ * neither is content, so they share a line and stay out of the document's way.
+ */
+function utilityBar() {
   const btns = (briefing.accounts || []).map(a => {
     const { label, cls } = acct(a.email);
     return `<button class="tag ${cls} filter-btn" data-account="${escAttr((a.email || '').toLowerCase())}" onclick="filterAccount(this)">${esc(label)}</button>`;
   }).join('');
-  return `<nav class="filterbar" role="group" aria-label="Filter by account">
-    <button class="tag tag-other filter-btn active" data-account="all" onclick="filterAccount(this)">ALL</button>${btns}
-  </nav>`;
+  return `
+  <div class="utility">
+    <div class="refresh-bar" id="refresh-bar">
+      <span class="rb-state" id="rb-state">Facts as written, ${esc(fmtTime(meta.generatedAt))} ET</span>
+      <button type="button" class="rb-btn" id="rb-btn" onclick="refreshFacts()">Check for updates</button>
+    </div>
+    <nav class="filterbar" role="group" aria-label="Filter by account">
+      <button class="tag tag-other filter-btn active" data-account="all" onclick="filterAccount(this)">ALL</button>${btns}
+    </nav>
+  </div>`;
 }
 
-function bottomLine() {
+// Section numbers are handed out in render order, only to sections that
+// actually render, so the document never shows "5." followed by "7.".
+let sectionCount = 1; // the bottom line is always 1
+function nextSection() { return ++sectionCount; }
+
+/**
+ * The overview: bottom line on the left, the week's calendar on the right.
+ * Side by side because they answer the same question from two directions —
+ * what matters, and when it falls due.
+ */
+function overview() {
   const b = brief || fallbackBrief();
   return `
-  <section class="doc-sec">
-    <h2 class="sec-label">1. Bottom line</h2>
-    <p class="bluf">${esc(b.bottomLine)}</p>
-    ${b.keyPoints?.length ? `<ul class="keypoints">${b.keyPoints.map(k => `<li>${esc(k)}</li>`).join('')}</ul>` : ''}
+  <section class="overview">
+    <div class="ov-bluf">
+      <h2 class="sec-label">1. Bottom line</h2>
+      <p class="bluf">${esc(b.bottomLine)}</p>
+      ${b.keyPoints?.length ? `<ul class="keypoints">${b.keyPoints.map(k => `<li>${esc(k)}</li>`).join('')}</ul>` : ''}
+    </div>
+    ${calendarCard()}
   </section>`;
+}
+
+// ── calendar card ────────────────────────────────────────────────────────────
+// Seven days from today, one row per day. The scan's week window starts today
+// and runs six days ahead, so the card covers exactly what was gathered. The
+// focus day (tomorrow, for an evening read) is highlighted; today's row is
+// dimmed since its commitments are behind him by the time he opens this.
+const FOCUS_OFFSET = process.env.BRIEFING_SCHEDULE_DAY === 'today' ? 0 : 1;
+
+function addDaysISO(iso, n) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function eventDayISO(ev) {
+  const s = String(ev.start || '');
+  if (ev.allDay || /^\d{4}-\d{2}-\d{2}$/.test(s)) return s.slice(0, 10);
+  const d = new Date(s);
+  return isNaN(d) ? '' : localISODate(d, TZ);
+}
+// All-day events carry an exclusive end date; a two-day event ends the day
+// after its last day. Anything longer than one day is drawn as a span.
+function allDaySpan(ev) {
+  if (!ev.allDay) return null;
+  const start = String(ev.start || '').slice(0, 10);
+  const end = String(ev.end || '').slice(0, 10);
+  if (!start || !end) return null;
+  const last = addDaysISO(end, -1);
+  return last > start ? { start, last } : null;
+}
+function fmtShortDate(iso) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' }).format(d);
+}
+function weekdayShort(iso) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short' }).format(d);
+}
+// Events are coloured by the account they belong to when the calendar is one
+// of Ben's mailboxes, so the card reads with the same designators as the rest
+// of the document; imported calendars keep their own Google colour.
+function eventColor(ev) {
+  const id = String(ev.calendarId || ev.calendarName || '').toLowerCase();
+  if (id.includes('biodynamics')) return 'var(--bda)';
+  if (id.includes('heartspring')) return 'var(--hs)';
+  if (id.includes('gmail')) return 'var(--pers)';
+  return ev.color || 'var(--rule)';
+}
+
+function calendarCard() {
+  const base = meta.date || todayISO;
+  const days = Array.from({ length: 7 }, (_, i) => addDaysISO(base, i));
+  const weekEnd = days[6];
+  const focus = days[FOCUS_OFFSET];
+  const events = [...(sections.weekSchedule || [])];
+  // Tomorrow's list is gathered separately; fold it in for the morning mode
+  // or for any day the week scan missed.
+  for (const ev of sections.tomorrowSchedule || []) {
+    if (!events.find(e => e.title === ev.title && e.start === ev.start)) events.push(ev);
+  }
+
+  const spans = [];
+  const byDay = new Map(days.map(d => [d, []]));
+  for (const ev of events) {
+    const span = allDaySpan(ev);
+    if (span) {
+      if (span.last >= base && span.start <= weekEnd) spans.push({ ev, ...span });
+      continue;
+    }
+    const day = eventDayISO(ev);
+    if (byDay.has(day)) byDay.get(day).push(ev);
+  }
+  for (const list of byDay.values()) {
+    list.sort((a, b) => (a.allDay === b.allDay ? String(a.start).localeCompare(String(b.start)) : a.allDay ? -1 : 1));
+  }
+  const total = [...byDay.values()].reduce((n, l) => n + l.length, 0);
+
+  const spanRows = spans.map(s => {
+    const from = s.start < base ? '' : `from ${fmtShortDate(s.start)}`;
+    const to = s.last > weekEnd ? `through ${fmtShortDate(s.last)}` : `to ${fmtShortDate(s.last)}`;
+    const when = [from, to].filter(Boolean).join(', ') || 'all week';
+    const startCol = Math.max(0, days.indexOf(s.start));
+    const endCol = s.last > weekEnd ? 6 : days.indexOf(s.last);
+    const inner = `<span class="cal-span-bar" style="--from:${startCol};--to:${endCol + 1};border-color:${escAttr(eventColor(s.ev))}"></span>
+      <span class="cal-span-text"><strong>${esc(s.ev.title)}</strong> <span class="cal-when">${esc(when)}</span></span>`;
+    return `<div class="cal-span">${s.ev.htmlLink ? `<a class="cal-span-link" href="${escAttr(s.ev.htmlLink)}" target="_blank" rel="noopener">${inner}</a>` : inner}</div>`;
+  }).join('');
+
+  const dayRows = days.map((d, i) => {
+    const list = byDay.get(d);
+    const isFocus = d === focus;
+    const isToday = i === 0 && !isFocus;
+    const caption = isFocus ? (FOCUS_OFFSET === 0 ? 'Today' : 'Tomorrow') : isToday ? 'Today' : '';
+    const cls = ['cal-day', isFocus ? 'is-focus' : '', isToday ? 'is-past' : ''].filter(Boolean).join(' ');
+    return `
+      <div class="${cls}">
+        <div class="cal-date">
+          <span class="cal-wd">${esc(weekdayShort(d))}</span>
+          <span class="cal-num">${Number(d.slice(8, 10))}</span>
+          ${caption ? `<span class="cal-cap">${caption}</span>` : ''}
+        </div>
+        <div class="cal-events">
+          ${list.length ? list.map(calEvent).join('') : '<span class="cal-empty">—</span>'}
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <aside class="ov-cal" aria-label="Calendar for the week">
+      <div class="cal-head">
+        <span class="sec-label cal-title">Calendar</span>
+        <span class="cal-range">${esc(fmtShortDate(base))} – ${esc(fmtShortDate(weekEnd))} · ${total} commitment${total === 1 ? '' : 's'}</span>
+      </div>
+      ${spanRows ? `<div class="cal-spans">${spanRows}</div>` : ''}
+      <div class="cal-days">${dayRows}</div>
+    </aside>`;
+}
+
+// A location that is a meeting URL is shown as its host ("zoom.us"): the chip
+// already opens the event, where the full link lives, and a raw URL would
+// swamp the column.
+function shortLocation(loc) {
+  const s = String(loc || '').trim();
+  if (!s) return '';
+  if (!/^https?:\/\//i.test(s)) return s;
+  try { return new URL(s).hostname.replace(/^(www|us\d+web)\./, ''); } catch { return 'link'; }
+}
+
+function calEvent(ev) {
+  const time = ev.allDay ? 'All day' : fmtTime(ev.start);
+  const end = !ev.allDay && ev.end ? fmtTime(ev.end) : '';
+  const loc = shortLocation(ev.location);
+  const inner = `
+      <span class="cal-time">${esc(time)}${end ? `<span class="cal-end">–${esc(end)}</span>` : ''}</span>
+      <span class="cal-body"><span class="cal-name">${esc(ev.title)}</span>${loc ? `<span class="cal-loc">${esc(loc)}</span>` : ''}</span>`;
+  const style = `style="border-color:${escAttr(eventColor(ev))}"`;
+  return ev.htmlLink
+    ? `<a class="cal-ev" ${style} href="${escAttr(ev.htmlLink)}" target="_blank" rel="noopener" title="Open in Google Calendar">${inner}</a>`
+    : `<div class="cal-ev" ${style}>${inner}</div>`;
 }
 
 // Priority items in presentation order, plus a lookup from conversation key to
@@ -181,7 +352,7 @@ function priorityItems() {
   if (!orderedItems.length) return '';
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">2. Priority items</h2>
+    <h2 class="sec-label">${nextSection()}. Priority items</h2>
     <ol class="items">${orderedItems.map(itemBlock).join('')}</ol>
   </section>`;
 }
@@ -211,7 +382,7 @@ function actionItems() {
     .sort((a, b) => String(b.completedAt || '').localeCompare(String(a.completedAt || '')));
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">3. Action items — <span id="task-open-count">${open.length}</span> open</h2>
+    <h2 class="sec-label">${nextSection()}. Action items — <span id="task-open-count">${open.length}</span> open</h2>
     <p class="sec-note">Checked items clear; your replies, by email or text, check items automatically. <button type="button" class="link-btn" id="task-toggle" onclick="toggleCompleted()">Show completed</button></p>
     <ul class="tasks hide-done" id="task-list">
       ${open.map(taskRow).join('')}
@@ -324,7 +495,7 @@ function responseQueue() {
   if (!awaiting.length && !continued.length) {
     return `
   <section class="doc-sec">
-    <h2 class="sec-label">4. Correspondence requiring response</h2>
+    <h2 class="sec-label">${nextSection()}. Correspondence requiring response</h2>
     <p class="none">No threads are currently awaiting a reply.</p>
   </section>`;
   }
@@ -344,7 +515,7 @@ function responseQueue() {
 
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">4. Correspondence requiring response — ${awaiting.length} thread${awaiting.length === 1 ? '' : 's'}</h2>
+    <h2 class="sec-label">${nextSection()}. Correspondence requiring response — ${awaiting.length} thread${awaiting.length === 1 ? '' : 's'}</h2>
     <p class="sec-note">Threads awaiting your reply, oldest first.</p>
     ${awaitingBlock}
     ${continuedBlock}
@@ -415,34 +586,18 @@ function field(label, text) {
   return `<p class="field"><span class="field-label">${label} —</span> ${esc(text)}</p>`;
 }
 
-function schedule() {
-  const tomorrow = sections.tomorrowSchedule || [];
-  const week = sections.weekSchedule || [];
+// The week's commitments themselves live in the overview card at the top; this
+// section keeps only what the scan proposed adding, each with a time picker
+// and a link that opens a pre-filled Google Calendar form for Ben to confirm.
+function proposedEntries() {
   const proposals = sections.calendarProposals || [];
-  if (!tomorrow.length && !week.length && !proposals.length) return '';
+  if (!proposals.length) return '';
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">5. Schedule — ${esc(meta.tomorrowLabel || 'today')}</h2>
-    <div id="tomorrow-schedule" class="sched">
-      ${tomorrow.length ? tomorrow.map(eventRow).join('') : '<p class="none">No commitments scheduled.</p>'}
-    </div>
-    ${proposals.length ? `
-    <h3 class="subsec-label">Proposed calendar entries</h3>
-    ${proposals.map(proposalRow).join('')}` : ''}
-    ${week.length > tomorrow.length ? `
-    <details class="week"><summary>Remainder of week — ${week.length} events</summary>
-      <div class="sched">${week.map(eventRow).join('')}</div>
-    </details>` : ''}
+    <h2 class="sec-label">${nextSection()}. Proposed calendar entries</h2>
+    <p class="sec-note">Suggested by the scan from messages proposing to meet. Nothing is added until you confirm it in Calendar.</p>
+    ${proposals.map(proposalRow).join('')}
   </section>`;
-}
-
-function eventRow(ev) {
-  const t = ev.allDay ? 'ALL DAY' : fmtTime(ev.start);
-  return `<div class="sched-row">
-    <span class="sched-time">${esc(t)}</span>
-    <span class="sched-body"><strong>${esc(ev.title)}</strong>${ev.location ? `, ${esc(ev.location)}` : ''} <span class="sched-cal">(${esc(ev.calendarName || '')})</span></span>
-    ${ev.htmlLink ? extA(ev.htmlLink, 'doc-link', 'Open →') : ''}
-  </div>`;
 }
 
 function proposalRow(p, i) {
@@ -465,7 +620,7 @@ function otherDevelopments() {
   if (!list.length) return '';
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">6. Other developments</h2>
+    <h2 class="sec-label">${nextSection()}. Other developments</h2>
     <ul class="devs">
       ${list.map(d => {
         const href = d.viewThreadId ? threadLink(d.viewThreadAccount || d.account, d.viewThreadId) : '';
@@ -481,7 +636,7 @@ function routineTraffic() {
   if (!count && !rt?.note) return '';
   return `
   <section class="doc-sec">
-    <h2 class="sec-label">7. Routine traffic</h2>
+    <h2 class="sec-label">${nextSection()}. Routine traffic</h2>
     <p class="routine">${count} lower-priority messages processed${rt?.note ? ` — ${esc(rt.note)}` : '.'}</p>
   </section>`;
 }
@@ -566,14 +721,13 @@ const html = `<!DOCTYPE html>
 <body>
   <main class="doc">
     ${masthead()}
-    ${refreshBar()}
     ${isStale ? staleWarning() : ''}
-    ${filterBar()}
-    ${bottomLine()}
+    ${utilityBar()}
+    ${overview()}
     ${priorityItems()}
     ${actionItems()}
     ${responseQueue()}
-    ${schedule()}
+    ${proposedEntries()}
     ${otherDevelopments()}
     ${routineTraffic()}
     ${appendix()}
@@ -625,20 +779,24 @@ function css() {
   --action:#8A2E1E; --action-bg:#F7EEEA; --await:#2E4E7E; --await-bg:#EDF1F7;
   --monitor:#5C5C55; --monitor-bg:#EFEEE8; --new-c:#2F5D3A; --new-bg:#EBF1EC;
   --bda:#6E5518; --bda-bg:#F3EEDF; --hs:#2F5D3A; --hs-bg:#EBF1EC; --pers:#2E4E7E; --pers-bg:#EDF1F7;
+  --focus-bg:#FBF6E6; --focus-rule:#E3D6AE;
+  --sans:Helvetica,Arial,sans-serif;
 }
 * { box-sizing:border-box; margin:0; padding:0; }
 body { background:#F2F1EC; color:var(--ink); font-family:Georgia,'Times New Roman',serif; font-size:15.5px; line-height:1.55; }
-.doc { max-width:720px; margin:0 auto; background:var(--paper); min-height:100vh; padding:36px 44px 48px; border-left:1px solid var(--rule-light); border-right:1px solid var(--rule-light); }
-@media (max-width:600px){ .doc { padding:24px 18px 40px; } }
+.doc { max-width:820px; margin:0 auto; background:var(--paper); min-height:100vh; padding:36px 48px 48px; border-left:1px solid var(--rule-light); border-right:1px solid var(--rule-light); }
+@media (max-width:640px){ .doc { padding:24px 18px 40px; } }
 a { color:var(--await); }
 
-.masthead { text-align:center; border-bottom:3px double var(--ink); padding-bottom:14px; margin-bottom:8px; }
+.masthead { text-align:center; border-bottom:3px double var(--ink); padding-bottom:14px; }
 .mast-title { font-family:Georgia,serif; font-size:26px; letter-spacing:.28em; font-weight:700; }
-.mast-meta { margin-top:8px; font-family:Helvetica,Arial,sans-serif; font-size:11px; letter-spacing:.06em; color:var(--muted); display:flex; justify-content:center; gap:14px; flex-wrap:wrap; text-transform:uppercase; }
+.mast-meta { margin-top:8px; font-family:var(--sans); font-size:11px; letter-spacing:.06em; color:var(--muted); display:flex; justify-content:center; gap:14px; flex-wrap:wrap; text-transform:uppercase; }
 
-.stale { border:1px solid var(--action); background:var(--action-bg); color:var(--action); font-family:Helvetica,Arial,sans-serif; font-size:12.5px; padding:10px 14px; margin:14px 0 0; }
+.stale { border:1px solid var(--action); background:var(--action-bg); color:var(--action); font-family:var(--sans); font-size:12.5px; padding:10px 14px; margin:14px 0 0; }
 
-.filterbar { display:flex; gap:6px; justify-content:center; padding:12px 0 4px; border-bottom:1px solid var(--rule-light); }
+/* One strip for both controls: live-facts state on the left, filter on the right. */
+.utility { display:flex; justify-content:space-between; align-items:center; gap:12px 24px; flex-wrap:wrap; padding:10px 0; border-bottom:1px solid var(--rule-light); }
+.filterbar { display:flex; gap:6px; flex-wrap:wrap; }
 .tag { display:inline-block; font-family:Helvetica,Arial,sans-serif; font-size:9.5px; font-weight:700; letter-spacing:.08em; padding:2px 7px; border:1px solid currentColor; }
 .tag-bda { color:var(--bda); background:var(--bda-bg); }
 .tag-hs { color:var(--hs); background:var(--hs-bg); }
@@ -656,9 +814,45 @@ button.filter-btn.active { outline:2px solid var(--ink); outline-offset:1px; }
 .sec-label { font-family:Helvetica,Arial,sans-serif; font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; border-bottom:1px solid var(--rule); padding-bottom:5px; margin-bottom:12px; }
 .subsec-label { font-family:Helvetica,Arial,sans-serif; font-size:10.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin:16px 0 8px; }
 
-.bluf { font-size:17px; line-height:1.5; font-weight:400; }
-.keypoints { margin:10px 0 0 20px; }
-.keypoints li { margin-bottom:5px; font-size:15px; }
+/* ── overview: bottom line beside the week ── */
+.overview { display:grid; grid-template-columns:minmax(0,1fr) 272px; gap:0 32px; margin-top:26px; }
+@media (max-width:640px){ .overview { grid-template-columns:1fr; gap:24px 0; } }
+.ov-bluf { min-width:0; }
+.bluf { font-size:17.5px; line-height:1.5; font-weight:400; }
+.keypoints { list-style:none; margin:14px 0 0; padding:0; border-top:1px solid var(--rule-light); }
+.keypoints li { position:relative; padding:7px 0 7px 18px; border-bottom:1px solid var(--rule-light); font-size:14.5px; line-height:1.45; }
+.keypoints li::before { content:''; position:absolute; left:2px; top:.95em; width:6px; height:6px; background:var(--ink); }
+
+.ov-cal { min-width:0; font-family:var(--sans); }
+.cal-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; border-bottom:1px solid var(--rule); padding-bottom:5px; margin-bottom:6px; }
+.cal-title { border:none; padding:0; margin:0; }
+.cal-range { font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); font-variant-numeric:tabular-nums; }
+.cal-spans { display:grid; gap:4px; padding:4px 0 6px; border-bottom:1px solid var(--rule-light); }
+.cal-span { display:grid; grid-template-columns:repeat(7,1fr); grid-template-rows:5px auto; row-gap:4px; }
+.cal-span-link { display:contents; color:inherit; text-decoration:none; }
+.cal-span-bar { grid-row:1; grid-column:calc(var(--from) + 1) / calc(var(--to) + 1); border-top:5px solid var(--rule); }
+.cal-span-text { grid-row:2; grid-column:1 / -1; font-size:12px; color:var(--ink); }
+.cal-span-text strong { font-family:Georgia,serif; font-size:13px; font-weight:700; }
+.cal-when { color:var(--muted); font-size:11px; }
+.cal-days { display:grid; }
+.cal-day { display:grid; grid-template-columns:46px minmax(0,1fr); gap:0 10px; padding:7px 0 7px 4px; margin:0 -4px; border-bottom:1px solid var(--rule-light); align-items:start; }
+.cal-day:last-child { border-bottom:none; }
+.cal-day.is-focus { background:var(--focus-bg); border-bottom-color:var(--focus-rule); box-shadow:0 -1px 0 var(--focus-rule); }
+.cal-day.is-past .cal-events, .cal-day.is-past .cal-num, .cal-day.is-past .cal-wd { opacity:.45; }
+.cal-date { display:flex; flex-direction:column; line-height:1; padding-top:2px; }
+.cal-wd { font-size:9.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
+.cal-num { font-family:Georgia,serif; font-size:19px; font-weight:700; margin-top:3px; font-variant-numeric:tabular-nums; }
+.cal-cap { font-size:8.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--action); margin-top:4px; }
+.cal-day.is-past .cal-cap { color:var(--muted); }
+.cal-events { display:grid; gap:5px; min-width:0; }
+.cal-empty { color:var(--rule); font-family:Georgia,serif; font-size:14px; line-height:1.6; }
+.cal-ev { display:grid; grid-template-columns:auto minmax(0,1fr); gap:0 8px; align-items:baseline; border-left:3px solid var(--rule); padding:1px 0 1px 8px; color:inherit; text-decoration:none; }
+a.cal-ev:hover .cal-name { text-decoration:underline; }
+.cal-time { font-size:10.5px; font-weight:700; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; letter-spacing:.02em; }
+.cal-end { font-weight:400; }
+.cal-body { min-width:0; }
+.cal-name { display:block; font-family:Georgia,serif; font-size:13.5px; line-height:1.3; color:var(--ink); overflow-wrap:anywhere; }
+.cal-loc { display:block; font-size:10.5px; color:var(--muted); margin-top:1px; overflow-wrap:anywhere; }
 
 .items { list-style:none; counter-reset:item; }
 .item { counter-increment:item; padding:16px 0 18px; border-bottom:1px solid var(--rule-light); }
@@ -677,13 +871,7 @@ button.filter-btn.active { outline:2px solid var(--ink); outline-offset:1px; }
 .doc-link { font-family:Helvetica,Arial,sans-serif; font-size:12px; font-weight:700; letter-spacing:.03em; color:var(--await); text-decoration:none; border-bottom:1px solid var(--await); }
 .doc-link:hover { opacity:.75; }
 
-.sched { display:grid; gap:2px; }
-.sched-row { display:flex; gap:14px; align-items:baseline; padding:7px 0; border-bottom:1px dotted var(--rule-light); font-size:14.5px; }
-.sched-time { font-family:Helvetica,Arial,sans-serif; font-size:11.5px; font-weight:700; min-width:70px; color:var(--muted); font-variant-numeric:tabular-nums; }
-.sched-body { flex:1; }
-.sched-cal { color:var(--muted); font-size:13px; }
 .none { color:var(--muted); font-style:italic; }
-.week summary { cursor:pointer; font-family:Helvetica,Arial,sans-serif; font-size:12px; color:var(--muted); margin-top:10px; }
 
 .proposal { padding:9px 0; border-bottom:1px dotted var(--rule-light); font-size:14.5px; }
 .proposal-line { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
@@ -705,17 +893,17 @@ button.filter-btn.active { outline:2px solid var(--ink); outline-offset:1px; }
 .t-md { color:#6E5518; }
 .t-lo { color:var(--muted); }
 .t-text { font-size:14.5px; }
-.refresh-bar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 22px; padding:10px 14px; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
-.rb-state { font-family:Helvetica,Arial,sans-serif; font-size:11.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
-.rb-state.rb-fresh { color:var(--accent); }
-.rb-state.rb-error { color:#B83A3A; }
-.rb-btn { font-family:Helvetica,Arial,sans-serif; font-size:12px; font-weight:600; padding:6px 12px; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--text); cursor:pointer; margin-left:auto; }
-.rb-btn:hover { background:var(--bg); }
+.refresh-bar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.rb-state { font-family:var(--sans); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+.rb-state.rb-fresh { color:var(--hs); }
+.rb-state.rb-error { color:var(--action); }
+.rb-btn { font-family:var(--sans); font-size:10.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:4px 10px; border:1px solid var(--ink); background:transparent; color:var(--ink); cursor:pointer; }
+.rb-btn:hover { background:var(--ink); color:var(--paper); }
 .rb-btn[disabled] { opacity:.5; cursor:default; }
 .q-answered .q-subject, .q-answered .q-sender { text-decoration:line-through; opacity:.6; }
-.q-answered-tag { font-family:Helvetica,Arial,sans-serif; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); margin-left:8px; }
+.q-answered-tag { font-family:var(--sans); font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--hs); margin-left:8px; }
 .new-since { margin-top:16px; }
-.new-since li { padding:6px 0; border-bottom:1px solid var(--border); font-size:13.5px; }
+.new-since li { padding:6px 0; border-bottom:1px solid var(--rule-light); font-size:13.5px; }
 .new-since .ns-sender { font-weight:600; }
 .new-since .ns-subject { color:var(--muted); }
 .queue-subhead { font-family:Helvetica,Arial,sans-serif; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:18px 0 6px; font-weight:600; }
@@ -745,9 +933,17 @@ button.filter-btn.active { outline:2px solid var(--ink); outline-offset:1px; }
 .raw-list { list-style:none; }
 .raw-list li { padding:6px 0; border-bottom:1px dotted var(--rule-light); font-size:13.5px; }
 
-footer { max-width:720px; margin:0 auto; padding:16px 44px 40px; font-family:Helvetica,Arial,sans-serif; font-size:11px; color:var(--muted); display:grid; gap:4px; border-top:none; }
-.doc footer { padding:22px 0 0; margin-top:30px; border-top:3px double var(--ink); }
+.doc footer { padding:22px 0 0; margin-top:30px; border-top:3px double var(--ink); font-family:var(--sans); font-size:11px; color:var(--muted); display:grid; gap:4px; }
 [data-account].hidden-by-filter { display:none; }
+
+@media print {
+  body { background:#fff; }
+  .doc { max-width:none; border:none; padding:0; }
+  .utility, .doc-link, .t-check { display:none; }
+  .overview { grid-template-columns:1fr 240px; }
+  .item, .cal-day, .tasks li, .queue li { break-inside:avoid; }
+  .appendix { display:none; }
+}
 `;
 }
 
@@ -763,14 +959,6 @@ footer { max-width:720px; margin:0 auto; padding:16px 44px 40px; font-family:Hel
  * Reports its own ignorance honestly: if the job has died, the line says how
  * old the facts are rather than implying they are current.
  */
-function refreshBar() {
-  return `
-  <div class="refresh-bar" id="refresh-bar">
-    <span class="rb-state" id="rb-state">Facts as written, ${esc(fmtTime(meta.generatedAt))} ET</span>
-    <button type="button" class="rb-btn" id="rb-btn" onclick="refreshFacts()">Check for updates</button>
-  </div>`;
-}
-
 function clientJs() {
   return `
 function filterAccount(btn) {

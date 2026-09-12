@@ -104,7 +104,7 @@ THEN write `/tmp/brief.json`:
       "id": "stable-slug-eg-bda-abo-funds",
       "title": "Concise item title (not the email subject line)",
       "account": "which mailbox this belongs to",
-      "priority": 1-5,
+      "priority": 1-5 (5 = highest; the page orders items by it, descending),
       "status": "action_required | awaiting_reply | monitoring | new | resolved",
       "background": "Compressed context, 1–3 sentences. From memory + older traffic. Omit for brand-new items.",
       "development": "What changed since the last brief (or 'No response in N days').",
