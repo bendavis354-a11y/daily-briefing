@@ -1,0 +1,62 @@
+name: Refresh briefing facts
+
+# The briefing's analysis is written once a day at 5pm and stays true. Its facts
+# rot the moment Ben answers something, so this republishes just the volatile
+# part every ten minutes. The page's "Check for updates" button reads it.
+#
+# Deterministic code only: it can see that a thread now carries his reply, and
+# that mail has arrived since the brief was written. It cannot judge whether any
+# of it matters — that stays with the daily run.
+#
+# Commits only when the facts actually changed, so most runs cost nothing and
+# the branch does not accumulate thousands of identical commits.
+
+on:
+  schedule:
+    # Every ten minutes. GitHub's scheduler has a five-minute floor and runs
+    # late under load, so treat this as "within roughly a quarter of an hour",
+    # which is what the page's timestamp tells the reader.
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  # Two overlapping runs would race on the same branch; the later one wins and
+  # the earlier is wasted work, so skip rather than queue.
+  group: refresh-facts
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Needs to fetch and push the deploy branch, not just this one.
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci --omit=dev || npm install --omit=dev --no-audit --no-fund
+
+      - name: Identify the committer
+        run: |
+          git config user.name "briefing-facts[bot]"
+          git config user.email "briefing-facts@users.noreply.github.com"
+
+      - name: Refresh and publish
+        env:
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GMAIL_ACCOUNTS_JSON: ${{ secrets.GMAIL_ACCOUNTS_JSON }}
+          GMAIL_REFRESH_TOKEN_HEARTSPRING: ${{ secrets.GMAIL_REFRESH_TOKEN_HEARTSPRING }}
+          GMAIL_REFRESH_TOKEN_BIODYNAMICS: ${{ secrets.GMAIL_REFRESH_TOKEN_BIODYNAMICS }}
+          STATE_ENCRYPTION_KEY: ${{ secrets.BRIEFING_PASSWORD }}
+        run: node src/refresh-status.mjs

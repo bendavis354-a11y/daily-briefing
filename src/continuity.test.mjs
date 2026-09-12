@@ -3,7 +3,7 @@
  * (header-less) message sources. Run: node src/continuity.test.mjs
  */
 import assert from 'node:assert';
-import { dedupeMessages, groupConversations, buildConversationKey } from './continuity.mjs';
+import { dedupeMessages, groupConversations, buildConversationKey, inferStatus, reconcileThreadStatus } from './continuity.mjs';
 
 const BEN = ['ben@heartspringgardens.org', 'benjamin@biodynamics.com', 'bendavis354@gmail.com'];
 let passed = 0;
@@ -90,6 +90,121 @@ check('unrelated messages remain separate conversations', () => {
   const deduped = dedupeMessages([oauthCopy, personalA]);
   const convos = groupConversations(deduped, BEN);
   assert.strictEqual(convos.length, 2);
+});
+
+// ── who the thread is actually waiting on ────────────────────────────────────
+// "The newest message is not Ben's" is sound for a two-person exchange and
+// wrong for a committee: he votes, colleagues reply to each other, and the
+// thread reads as though it were waiting on him.
+const msg = (from, opts = {}) => ({
+  from, to: opts.to || '', cc: opts.cc || '',
+  internalDate: opts.at || 0, subject: opts.subject || 'Re: something',
+  fromMe: BEN.some(e => from.toLowerCase().includes(e)),
+  labelIds: opts.labelIds || []
+});
+
+check('two-person thread with their message last still waits on Ben', () => {
+  const convo = { messages: [
+    msg('sarah@demeter-usa.org', { to: 'ben@heartspringgardens.org', at: 1 }),
+    msg('ben@heartspringgardens.org', { to: 'sarah@demeter-usa.org', at: 2 }),
+    msg('sarah@demeter-usa.org', { to: 'ben@heartspringgardens.org', at: 3 })
+  ] };
+  assert.strictEqual(inferStatus(convo), 'waiting_on_ben');
+});
+
+check('committee thread he has answered reads as continued, not waiting', () => {
+  // The real case: Ben votes, then two colleagues approve to each other.
+  const cc = 'carin@biodynamics.com, mmueller@biodynamics.com, dorothy@biodynamics.com';
+  const convo = { messages: [
+    msg('coree@biodynamics.com', { to: 'benjamin@biodynamics.com', cc, at: 1 }),
+    msg('benjamin@biodynamics.com', { to: 'coree@biodynamics.com', cc, at: 2 }),
+    msg('dorothy@biodynamics.com', { to: 'benjamin@biodynamics.com', cc, at: 3 }),
+    msg('coree@biodynamics.com', { to: 'carin@biodynamics.com', cc, at: 4 })
+  ] };
+  assert.strictEqual(inferStatus(convo), 'thread_continued');
+});
+
+check('a group thread he has NEVER answered still waits on him', () => {
+  const cc = 'carin@biodynamics.com, mmueller@biodynamics.com';
+  const convo = { messages: [
+    msg('coree@biodynamics.com', { to: 'benjamin@biodynamics.com', cc, at: 1 }),
+    msg('dorothy@biodynamics.com', { to: 'benjamin@biodynamics.com', cc, at: 2 })
+  ] };
+  assert.strictEqual(inferStatus(convo), 'waiting_on_ben', 'silence on a group ask is still his to answer');
+});
+
+check('his own message last still reads as waiting on them', () => {
+  const convo = { messages: [
+    msg('coree@biodynamics.com', { to: 'benjamin@biodynamics.com', cc: 'carin@biodynamics.com', at: 1 }),
+    msg('benjamin@biodynamics.com', { to: 'coree@biodynamics.com', cc: 'carin@biodynamics.com', at: 2 })
+  ] };
+  assert.strictEqual(inferStatus(convo), 'waiting_on_other');
+});
+
+check('newsletters are still fyi, never continued', () => {
+  const convo = { messages: [
+    msg('benjamin@biodynamics.com', { to: 'list@x.org', cc: 'a@x.org, b@x.org', at: 1 }),
+    msg('newsletter@x.org', { to: 'list@x.org', cc: 'a@x.org, b@x.org', at: 2, subject: 'The weekly newsletter' })
+  ] };
+  assert.strictEqual(inferStatus(convo), 'fyi');
+});
+
+check('an empty conversation is unknown, not waiting', () => {
+  assert.strictEqual(inferStatus({ messages: [] }), 'unknown');
+});
+
+// ── pooling evidence across mailboxes ────────────────────────────────────────
+// The same thread can survive as two conversations (Workspace copy + personal
+// copy). When he answers from the Workspace address, only that copy holds the
+// reply, and the other keeps asking for what he has already sent.
+check('a reply in one mailbox silences the copy in another', () => {
+  const workspace = {
+    conversationKey: '<abc@mail>', status: 'waiting_on_other',
+    latestMessage: { subject: 'Re: Garden extract order delivery' },
+    messages: [msg('andrea@urielpharmacy.com', { at: 1 }), msg('ben@heartspringgardens.org', { at: 2 })]
+  };
+  const personal = {
+    conversationKey: 'gthread:bendavis354@gmail.com:123', status: 'waiting_on_ben',
+    latestMessage: { subject: 'Garden extract order delivery' },
+    messages: [msg('andrea@urielpharmacy.com', { at: 1 })]
+  };
+  reconcileThreadStatus([workspace, personal]);
+  assert.strictEqual(personal.status, 'thread_continued', 'the personal copy stops nagging');
+  assert.strictEqual(workspace.status, 'waiting_on_other', 'the answered copy is untouched');
+});
+
+check('a thread he has answered nowhere keeps asking', () => {
+  const a = {
+    status: 'waiting_on_ben', latestMessage: { subject: 'Re: payment processing protocols' },
+    messages: [msg('coree@biodynamics.com', { at: 1 })]
+  };
+  const b = {
+    status: 'waiting_on_ben', latestMessage: { subject: 'payment processing protocols' },
+    messages: [msg('coree@biodynamics.com', { at: 1 })]
+  };
+  reconcileThreadStatus([a, b]);
+  assert.strictEqual(a.status, 'waiting_on_ben');
+  assert.strictEqual(b.status, 'waiting_on_ben');
+});
+
+check('reconciliation never promotes a thread to needing attention', () => {
+  const answered = {
+    status: 'waiting_on_other', latestMessage: { subject: 'Re: Demeter Reach Out!' },
+    messages: [msg('ben@heartspringgardens.org', { at: 2 })]
+  };
+  const fyi = {
+    status: 'fyi', latestMessage: { subject: 'Demeter Reach Out!' },
+    messages: [msg('sarah@demeter-usa.org', { at: 1 })]
+  };
+  reconcileThreadStatus([answered, fyi]);
+  assert.strictEqual(fyi.status, 'fyi', 'only waiting_on_ben is ever downgraded');
+});
+
+check('short subjects never pool, since they collide across threads', () => {
+  const a = { status: 'waiting_on_ben', latestMessage: { subject: 'Hi' }, messages: [msg('x@y.com', { at: 1 })] };
+  const b = { status: 'waiting_on_other', latestMessage: { subject: 'Hi' }, messages: [msg('ben@heartspringgardens.org', { at: 2 })] };
+  reconcileThreadStatus([a, b]);
+  assert.strictEqual(a.status, 'waiting_on_ben', 'an unrelated "Hi" must not be silenced');
 });
 
 console.log(`\n${passed} checks passed.`);
