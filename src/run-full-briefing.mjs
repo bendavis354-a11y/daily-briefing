@@ -9,8 +9,9 @@ import { emptyState } from './drive-state.mjs';
 import { loadDurableState } from './state-store.mjs';
 import { scanConfiguredMailboxes, loadConnectorMessages } from './gmail-api.mjs';
 import { dedupeMessages, groupConversations } from './continuity.mjs';
-import { pickDriveAccount, isConnectorAccount } from './accounts.mjs';
-import { carryForwardTasks, applyReplyCompletions, retainTasks, extractReplyObservations } from './tasks.mjs';
+import { isConnectorAccount } from './accounts.mjs';
+import { loadImessageExport, tokenExpiryWarning, REPAIR_COMMAND } from './imessage-store.mjs';
+import { carryForwardTasks, applyReplyCompletions, retainTasks, dedupeTasks, extractReplyObservations } from './tasks.mjs';
 import { listTomorrowEventsForAccount, listCalendars, listEvents } from './calendar-api.mjs';
 
 // ── STEP 1: Dates ─────────────────────────────────────────────────────────────
@@ -63,8 +64,6 @@ console.log(`STEP 1: today=${todayISO}  schedule day=${scheduleISO}  offset=${NY
 const accounts = JSON.parse(process.env.GMAIL_ACCOUNTS_JSON || '[]');
 const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
 const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
-const driveFileId = process.env.DRIVE_STATE_FILE_ID;
-const driveImessageFileId = process.env.DRIVE_IMESSAGE_FILE_ID;
 const liveUrl = process.env.GITHUB_PAGES_URL || '';
 
 if (!clientId || !clientSecret) throw new Error('Missing GOOGLE_OAUTH_CLIENT_ID or GOOGLE_OAUTH_CLIENT_SECRET');
@@ -84,14 +83,8 @@ try {
 // Plaintext copy for the agent's analysis step (storylines, patterns, tasks).
 fs.writeFileSync('/tmp/current-state.json', JSON.stringify(assistantState, null, 2));
 
-// A Drive token is still used (best-effort) for the iMessage export read only.
-let driveToken = null;
-try {
-  const driveAccount = pickDriveAccount(accounts);
-  driveToken = await getAccessToken({ clientId, clientSecret, refreshToken: process.env[driveAccount.refreshTokenEnv] });
-} catch (err) {
-  console.warn(`Drive token unavailable (${err.message}) — continuing without iMessage export`);
-}
+// No Drive token is minted any more: memory lives in state.enc and the iMessage
+// export in imessages.enc, both on the deploy branch. Nothing else read Drive.
 
 const priorConvos = assistantState.conversations || {};
 const ignoredKeys = new Set(Object.keys(assistantState.ignoredConversations || {}));
@@ -102,37 +95,23 @@ const snoozedKeys = new Set(
 );
 
 // ── STEP 2B: Load iMessage export ─────────────────────────────────────────────
+// Read from the repo (imessages.enc on the deploy branch), not Drive. See
+// imessage-store.mjs for why the Drive path could never have worked.
 console.log('STEP 2B: Loading iMessage export…');
-let imessageData = null;
-let imessageStatus = 'missing';
-let imessageAgeHours = null;
+const imessageResult = loadImessageExport({ now });
+const imessageData = imessageResult.data;
+const imessageStatus = imessageResult.status;
+const imessageAgeHours = imessageResult.ageHours;
 
-if (driveImessageFileId && driveToken) {
-  try {
-    const res = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${driveImessageFileId}?alt=media`,
-      { headers: { authorization: `Bearer ${driveToken}` } }
-    );
-    if (!res.ok) {
-      console.log(`iMessage Drive read failed: ${res.status} — continuing without iMessages`);
-      imessageStatus = 'missing';
-    } else {
-      imessageData = await res.json();
-      const exportedAt = new Date(imessageData.exportedAt || 0);
-      const ageHours = (now - exportedAt) / 3600000;
-      imessageAgeHours = ageHours;
-      if (ageHours > 6) {
-        console.log(`iMessage export is stale (${ageHours.toFixed(1)}h old, exported at ${imessageData.exportedAt})`);
-        imessageStatus = 'stale';
-      } else {
-        imessageStatus = 'fresh';
-        console.log(`iMessage export loaded: ${imessageData.messages?.length || 0} messages, exported ${imessageData.exportedAt}`);
-      }
-    }
-  } catch (err) {
-    console.log(`iMessage load error: ${err.message} — continuing without iMessages`);
-    imessageStatus = 'missing';
-  }
+if (imessageStatus === 'fresh') {
+  console.log(`iMessage export loaded from ${imessageResult.source}: ${imessageData.messages?.length || 0} messages, exported ${imessageData.exportedAt}`);
+} else if (imessageStatus === 'stale') {
+  const age = imessageAgeHours != null ? `${imessageAgeHours.toFixed(1)}h old` : 'undated';
+  console.log(`iMessage export is stale (${age}, exported at ${imessageData?.exportedAt || 'unknown'})`);
+} else if (imessageStatus === 'error') {
+  console.error(`iMessage export failed to decrypt: ${imessageResult.error}`);
+} else {
+  console.log(`iMessage export unavailable (${imessageResult.error || 'not found'}) — continuing without iMessages`);
 }
 
 // ── STEP 3: Scan Gmail ────────────────────────────────────────────────────────
@@ -491,6 +470,9 @@ const trimmedReplies = suggestedReplies.slice(0, 8).map(r => { delete r._isNew; 
 
 // ── STEP 5B: Process iMessages ────────────────────────────────────────────────
 const imessageSection = [];
+// Chat-shaped records handed to the reply detector alongside email
+// conversations; populated only from a FRESH export, never a stale one.
+const imessageConversations = [];
 let imessagesScanned = 0;
 let imessagesActionable = 0;
 
@@ -550,12 +532,31 @@ if (imessageData && imessageStatus === 'fresh') {
       todoText
     });
 
-    // iMessage-derived todo
+    // A pseudo-conversation per chat, shaped like an email conversation, so the
+    // reply detector in STEP 5C can close text items the same way it closes
+    // email ones. The export carries Ben's own outgoing messages, so "he
+    // answered" is observable here — it just needs to be expressed in the shape
+    // applyReplyCompletions already understands.
+    imessageConversations.push({
+      conversationKey: `imsg:${chatKey}`,
+      latestMessage: {
+        fromMe: isFromMe,
+        internalDate: Date.parse(msgDate) || null
+      }
+    });
+
+    // iMessage-derived todo. The conversationKey is what lets it auto-complete;
+    // the context excerpt is what keeps it meaningful once the message itself
+    // drops out of the export's rolling window (48h by default) while the item
+    // lives on for up to 45 days.
     if (todoText) {
+      const excerpt = String(latest.text || latest.body || '').trim();
       todos.push({
         id: `todo-imsg-${chatKey}`,
+        conversationKey: `imsg:${chatKey}`,
         priority,
         text: todoText,
+        context: excerpt ? excerpt.slice(0, 140) : '(no text — attachment or image)',
         status: 'open',
         origin: 'imessage'
       });
@@ -586,8 +587,23 @@ if (imessageData && imessageStatus === 'fresh') {
     chat: 'system',
     date: now.toISOString(),
     summary: `iMessage export is stale — last upload ${imessageData?.exportedAt || 'unknown'} (${ageDays} days ago). ` +
-      `The Mac exporter has stopped. On the Mac: tail ~/Library/Logs/ben-briefing/export.log — see mac/README.md troubleshooting.`,
+      `The Mac exporter has stopped. On the Mac, run: ${REPAIR_COMMAND}`,
     priority: imessageAgeHours != null && imessageAgeHours > 48 ? 'high' : 'low',
+    needsReply: false,
+    todoText: null
+  });
+} else if (imessageStatus === 'error') {
+  imessageSection.push({
+    id: 'imsg-error-notice',
+    sender: 'System',
+    handle: '',
+    chat: 'system',
+    date: now.toISOString(),
+    summary: `iMessage export could not be decrypted (${imessageResult.error}). ` +
+      `The Mac exporter is running, but its encryption_key does not match this ` +
+      `environment's key (STATE_ENCRYPTION_KEY, or BRIEFING_PASSWORD when unset). ` +
+      `On the Mac, run: ${REPAIR_COMMAND}`,
+    priority: 'high',
     needsReply: false,
     todoText: null
   });
@@ -598,11 +614,48 @@ if (imessageData && imessageStatus === 'fresh') {
     handle: '',
     chat: 'system',
     date: now.toISOString(),
-    summary: 'iMessage export was unavailable for this run (Drive file unreadable or no Drive token).',
+    summary: `No iMessage export found on the deploy branch (${imessageResult.error || 'not found'}). ` +
+      `Either the Mac exporter has never run or it cannot push. On the Mac, run: ${REPAIR_COMMAND}`,
     priority: 'low',
     needsReply: false,
     todoText: null
   });
+}
+
+// Token expiry is the likeliest scheduled failure in the whole chain, and the
+// only one that can be caught BEFORE it bites. Warned on any export that
+// carries the date, stale ones included, and raised as an action item so it
+// lands on the checklist rather than only in the texts section.
+const tokenWarning = tokenExpiryWarning(imessageData, now);
+if (tokenWarning) {
+  const { daysLeft } = tokenWarning;
+  const overdue = daysLeft <= 0;
+  imessageSection.unshift({
+    id: 'imsg-token-expiry',
+    sender: 'System',
+    handle: '',
+    chat: 'system',
+    date: now.toISOString(),
+    summary: overdue
+      ? `The Mac exporter's GitHub token has EXPIRED. Texts have stopped. On the Mac, run: ${REPAIR_COMMAND}`
+      : `The Mac exporter's GitHub token expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. ` +
+        `Mint a replacement with Contents: Read and write, then set it as github_token ` +
+        `in ~/.config/ben-briefing/imessage-export.json.`,
+    priority: daysLeft <= 7 ? 'high' : 'medium',
+    needsReply: false,
+    todoText: null
+  });
+  todos.push({
+    id: 'todo-imsg-token-expiry',
+    priority: daysLeft <= 7 ? 'high' : 'medium',
+    text: overdue
+      ? 'Renew the expired GitHub token for the Mac iMessage exporter'
+      : `Renew the Mac iMessage exporter's GitHub token (${daysLeft} days left)`,
+    context: 'Without it the Mac stops publishing texts and the briefing loses them silently.',
+    status: 'open',
+    origin: 'imessage'
+  });
+  console.log(`Token expiry warning: ${daysLeft} days left`);
 }
 
 console.log(`iMessages: scanned=${imessagesScanned}, actionable=${imessagesActionable}`);
@@ -615,9 +668,12 @@ console.log(`iMessages: scanned=${imessagesScanned}, actionable=${imessagesActio
 // page under "Recently completed". Detection uses the full conversation list
 // (pre-ignore/snooze) so a reply on a snoozed thread still completes its task.
 const merged = carryForwardTasks(todos, assistantState.openTasks || []);
-applyReplyCompletions(merged, conversations, now);
+// Email conversations plus the text chats, so a reply by either medium closes
+// its item. extractReplyObservations below deliberately sees only the email
+// list: the habit profile is built from addressed correspondence.
+applyReplyCompletions(merged, [...conversations, ...imessageConversations], now);
 todos.length = 0;
-todos.push(...retainTasks(merged, now));
+todos.push(...dedupeTasks(retainTasks(merged, now)));
 const completedNow = todos.filter(t => t.status === 'completed').length;
 console.log(`Action items: ${todos.length} total, ${completedNow} auto-completed by replies`);
 
@@ -680,8 +736,6 @@ console.log(`Actions: replies=${trimmedReplies.length} todos=${todos.length} cal
 
 // Export state payload for update step
 const statePayload = {
-  driveAccessToken: driveToken,
-  driveFileId,
   conversations: activeConvos.map(c => ({
     conversationKey: c.conversationKey,
     status: c.status,

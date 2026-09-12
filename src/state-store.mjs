@@ -41,9 +41,9 @@ export function encryptState(state, password = statePassword()) {
   return Buffer.concat([MAGIC, salt, iv, ct, cipher.getAuthTag()]);
 }
 
-export function decryptState(buf, password = statePassword()) {
+export function decryptState(buf, password = statePassword(), label = STATE_FILE) {
   if (!Buffer.isBuffer(buf) || buf.length < 48 || !buf.subarray(0, 4).equals(MAGIC)) {
-    throw new Error('state.enc is not a valid BAS1 blob');
+    throw new Error(`${label} is not a valid BAS1 blob`);
   }
   const salt = buf.subarray(4, 20);
   const iv = buf.subarray(20, 32);

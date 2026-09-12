@@ -33,6 +33,20 @@ fi
 echo "    python3:  $PYTHON_BIN"
 echo "    exporter: $EXPORTER"
 
+# 0. AES-256-GCM dependency. The export is encrypted before it is committed to
+#    the repo, and macOS ships no AES in the Python standard library.
+if "$PYTHON_BIN" -c "from cryptography.hazmat.primitives.ciphers.aead import AESGCM" 2>/dev/null; then
+  echo "    cryptography: already installed"
+else
+  echo "    cryptography: installing (needed for AES-256-GCM)…"
+  if "$PYTHON_BIN" -m pip install --user --quiet cryptography; then
+    echo "    cryptography: installed"
+  else
+    echo "    WARNING: could not install 'cryptography'. Install it by hand:" >&2
+    echo "             $PYTHON_BIN -m pip install --user cryptography" >&2
+  fi
+fi
+
 # 1. Config scaffold (lives outside the repo so secrets never hit git).
 mkdir -p "$CONFIG_DIR"
 if [[ ! -f "$CONFIG_FILE" ]]; then
@@ -84,6 +98,13 @@ launchctl load "$PLIST"
 echo "    Loaded agent (runs every $((INTERVAL_SECONDS / 3600))h, and once now)."
 
 cat <<NOTE
+
+==> Fill in the config: $CONFIG_FILE
+    github_token    fine-grained PAT, this repo only, Contents: Read and write
+    github_repo     owner/repo of the briefing repository
+    encryption_key  MUST equal the cloud's STATE_ENCRYPTION_KEY, or, when that
+                    is not set, BRIEFING_PASSWORD (the briefing page password).
+                    Mismatch = the cloud run reports a decryption error.
 
 ==> One more manual step: GRANT FULL DISK ACCESS
     macOS blocks reads of ~/Library/Messages/chat.db unless the program

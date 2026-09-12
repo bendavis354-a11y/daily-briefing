@@ -13,7 +13,8 @@ Ben operates three accounts, and every item must carry its designator:
   suppliers, customers, money in motion.
 - **Personal** (`bendavis354@gmail.com`) — family, friends, community. Read via
   the Gmail connector (its custom-OAuth token is not durable). Texts (iMessage)
-  arrive via the Drive export when fresh.
+  arrive as `imessages.enc` on the `claude/briefing` branch, pushed by the Mac
+  exporter and read by the scripts — no Drive or Google token involved.
 
 This routine runs daily at 7:00 AM America/New_York as an agent session with
 the Gmail connector plus this repo's Node scripts. Assistant memory lives as an
@@ -44,6 +45,10 @@ involved in memory, and you never copy file contents by hand.
    - `in:sent newer_than:14d`
 2. `get_thread` the substantive ones; normalize each message to
    `{ id, threadId, sender, toRecipients, ccRecipients, subject, snippet, date, labelIds }`.
+   Copy `snippet` **verbatim** from the API — do not paraphrase, retype or
+   re-encode it. The dedupe matches the personal copy of a message against its
+   Workspace copy partly on the snippet, so a reworded snippet splits one
+   message into two conversations and the same item is reported twice.
 3. Write `{ "sourceAccount": "bendavis354@gmail.com", "messages": [...] }` to
    `/tmp/connector-personal-messages.json`. If the connector is unavailable,
    write an empty `messages` array, continue, and note the gap in the brief.
