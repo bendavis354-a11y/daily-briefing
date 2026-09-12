@@ -12,7 +12,8 @@ import { dedupeMessages, groupConversations, reconcileThreadStatus } from './con
 import { isConnectorAccount, loadAccounts } from './accounts.mjs';
 import { loadImessageExport, tokenExpiryWarning, REPAIR_COMMAND } from './imessage-store.mjs';
 import { findMeetingProposal, isMeetingProposalText, isFresh } from './meeting-detect.mjs';
-import { carryForwardTasks, applyReplyCompletions, retainTasks, dedupeTasks, extractReplyObservations } from './tasks.mjs';
+import { triageChat, cleanText } from './imessage-triage.mjs';
+import { carryForwardTasks, applyReplyCompletions, retainTasks, dedupeTasks, dropSettledTasks, extractReplyObservations } from './tasks.mjs';
 import { listTomorrowEventsForAccount, listCalendars, listEvents } from './calendar-api.mjs';
 
 // ── STEP 1: Dates ─────────────────────────────────────────────────────────────
@@ -383,7 +384,7 @@ for (const convo of activeConvos) {
         account: item.account,
         sourceAccount: item.sourceAccount,
         priority: 'medium',
-        text: `Review: ${latest.subject}`,
+        text: `Review: ${latest.subject} — from ${sender.name || sender.email}`,
         status: 'open',
         origin: 'email'
       });
@@ -493,6 +494,9 @@ const imessageSection = [];
 // Chat-shaped records handed to the reply detector alongside email
 // conversations; populated only from a FRESH export, never a stale one.
 const imessageConversations = [];
+// Chats the export shows and this run judged as needing no reply: a text item
+// carried forward for one of these was raised in error and is dropped below.
+const settledTextChats = new Set();
 let imessagesScanned = 0;
 let imessagesActionable = 0;
 
@@ -514,11 +518,16 @@ if (imessageData && imessageStatus === 'fresh') {
 
   for (const [chatKey, chatMsgs] of chatMap.entries()) {
     chatMsgs.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
-    const latest = chatMsgs[chatMsgs.length - 1];
-    const isFromMe = latest.is_from_me || false;
-    const needsReply = !isFromMe;
+    // Reactions and the driving auto-reply are skipped, acknowledgements close
+    // an exchange, and group chats need his name; see imessage-triage.mjs.
+    const triage = triageChat(chatKey, chatMsgs);
+    const latest = triage.latest || chatMsgs[chatMsgs.length - 1];
+    const isFromMe = !!latest.is_from_me;
+    const needsReply = triage.needsReply;
+    if (!needsReply) settledTextChats.add(`imsg:${chatKey}`);
     const msgDate = latest.date || latest.timestamp || '';
-    const senderName = latest.sender_name || latest.handle || chatKey;
+    const counterpart = chatMsgs.find(m => !m.is_from_me);
+    const senderName = counterpart?.sender_name || latest.sender_name || latest.handle || chatKey;
 
     // Determine priority
     const text = String(latest.text || latest.body || '').toLowerCase();
@@ -548,7 +557,7 @@ if (imessageData && imessageStatus === 'fresh') {
       handle: latest.handle || chatKey,
       chat: chatKey,
       date: msgDate,
-      summary: String(latest.text || latest.body || `${chatMsgs.length} messages`).slice(0, 160),
+      summary: (triage.excerpt || cleanText(latest) || `${chatMsgs.length} messages`).slice(0, 160),
       priority,
       needsReply,
       todoText
@@ -572,7 +581,7 @@ if (imessageData && imessageStatus === 'fresh') {
     // drops out of the export's rolling window (48h by default) while the item
     // lives on for up to 45 days.
     if (todoText) {
-      const excerpt = String(latest.text || latest.body || '').trim();
+      const excerpt = triage.excerpt;
       todos.push({
         id: `todo-imsg-${chatKey}`,
         conversationKey: `imsg:${chatKey}`,
@@ -691,7 +700,7 @@ console.log(`iMessages: scanned=${imessagesScanned}, actionable=${imessagesActio
 // sent-mail scan is the evidence. Auto-completed items linger one day on the
 // page under "Recently completed". Detection uses the full conversation list
 // (pre-ignore/snooze) so a reply on a snoozed thread still completes its task.
-const merged = carryForwardTasks(todos, assistantState.openTasks || []);
+const merged = dropSettledTasks(carryForwardTasks(todos, assistantState.openTasks || []), settledTextChats);
 // Email conversations plus the text chats, so a reply by either medium closes
 // its item. extractReplyObservations below deliberately sees only the email
 // list: the habit profile is built from addressed correspondence.

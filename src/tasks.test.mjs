@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert';
 import {
-  carryForwardTasks, applyReplyCompletions, retainTasks, dedupeTasks,
+  carryForwardTasks, applyReplyCompletions, retainTasks, dedupeTasks, dropSettledTasks,
   extractReplyObservations, updatePatterns
 } from './tasks.mjs';
 
@@ -243,6 +243,21 @@ check('text and email keys cannot collide', () => {
   applyReplyCompletions(tasks, convos, NOW);
   assert.strictEqual(tasks[0].status, 'open', 'the text item is untouched by an email reply');
   assert.strictEqual(tasks[1].status, 'completed');
+});
+
+// ── dropping text items this run has judged as needing nothing ───────────────
+check('a carried-forward text item is dropped once its chat is triaged as settled', () => {
+  const tasks = [
+    { id: 'a', origin: 'imessage', conversationKey: 'imsg:+1', status: 'open', carriedForward: true },
+    { id: 'b', origin: 'imessage', conversationKey: 'imsg:+2', status: 'open', carriedForward: true },
+    { id: 'c', origin: 'imessage', conversationKey: 'imsg:+1', status: 'open' },
+    { id: 'd', origin: 'email', conversationKey: 'imsg:+1', status: 'open', carriedForward: true },
+    { id: 'e', origin: 'imessage', conversationKey: 'imsg:+3', status: 'completed', carriedForward: true }
+  ];
+  const kept = dropSettledTasks(tasks, new Set(['imsg:+1', 'imsg:+3']));
+  assert.deepStrictEqual(kept.map(t => t.id), ['b', 'c', 'd', 'e'],
+    'only a carried, open, text item for a settled chat goes; fresh items, email items and completed ones stay');
+  assert.strictEqual(dropSettledTasks(tasks, new Set()).length, 5, 'nothing settled, nothing dropped');
 });
 
 console.log(`\n${passed} checks passed.`);

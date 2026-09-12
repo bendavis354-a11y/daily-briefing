@@ -200,6 +200,69 @@ check('reconciliation never promotes a thread to needing attention', () => {
   assert.strictEqual(fyi.status, 'fyi', 'only waiting_on_ben is ever downgraded');
 });
 
+// ── a message put to Ben alone waits on him, whatever the thread's history ──
+check('a two-way exchange inside a thread that began as a group waits on Ben', () => {
+  // Newman introduces Crockett and Ben (three parties); it becomes Crockett
+  // and Ben trading availability. Crockett's latest is addressed to Ben only.
+  const convo = { messages: [
+    msg('dnewman@arthurspointfarm.com', { to: 'bendavis354@gmail.com, ben@berkshireagventures.org', at: 1 }),
+    msg('bendavis354@gmail.com', { to: 'dnewman@arthurspointfarm.com', cc: 'ben@berkshireagventures.org', at: 2 }),
+    { ...msg('ben@berkshireagventures.org', { to: 'bendavis354@gmail.com', at: 3 }), toMeOnly: true }
+  ] };
+  assert.strictEqual(inferStatus(convo), 'waiting_on_ben');
+});
+
+check('a greeting that names him counts as addressed to him', () => {
+  const cc = 'coree@biodynamics.com, dorothy@biodynamics.com';
+  const convo = { messages: [
+    msg('benjamin@biodynamics.com', { to: 'zachary@biodynamics.com', cc, at: 1 }),
+    { ...msg('zachary@biodynamics.com', { to: 'benjamin@biodynamics.com', cc, at: 2 }), namesMe: true }
+  ] };
+  assert.strictEqual(inferStatus(convo), 'waiting_on_ben');
+});
+
+check('a reply-all that lands in his To with the committee in Cc is not directed', () => {
+  // Chelsea replies to Ben's "I plan to be there": To Ben, ten in Cc, "Hey everyone".
+  const [convo] = groupConversations([
+    { ...oauthCopy, gmailMessageId: 'g1', gmailThreadId: 't-abo', rfcMessageId: '', from: 'Benjamin Davis <bendavis354@gmail.com>', to: 'beth@goodfootfarm.com', cc: 'alex@spikenardfarm.org, gobiodynamic@gmail.com', subject: 'Re: ABO Meeting', snippet: 'Hello all, I plan to be there.', internalDate: 1 },
+    { ...oauthCopy, gmailMessageId: 'g2', gmailThreadId: 't-abo', rfcMessageId: '', from: 'Chelsea <cnolan214@gmail.com>', to: 'bendavis354@gmail.com', cc: 'beth@goodfootfarm.com, alex@spikenardfarm.org, gobiodynamic@gmail.com', subject: 'Re: ABO Meeting', snippet: 'Hey everyone, I’m happy to share an update on the rebrand.', internalDate: 2 }
+  ], BEN);
+  assert.strictEqual(convo.status, 'thread_continued');
+  const [direct] = groupConversations([
+    { ...oauthCopy, gmailMessageId: 'g3', gmailThreadId: 't-bav', rfcMessageId: '', from: 'bendavis354@gmail.com', to: 'ben@berkshireagventures.org', cc: 'dnewman@arthurspointfarm.com', subject: 'Re: Connecting BAV', snippet: 'Thanks Dave!', internalDate: 1 },
+    { ...oauthCopy, gmailMessageId: 'g4', gmailThreadId: 't-bav', rfcMessageId: '', from: 'ben@berkshireagventures.org', to: 'bendavis354@gmail.com', cc: '', subject: 'Re: Connecting BAV', snippet: 'Roger that, here’s next week’s availability', internalDate: 2 }
+  ], BEN);
+  assert.strictEqual(direct.status, 'waiting_on_ben', 'a two-way message with no one copied is his');
+});
+
+check('calendar responses and notification senders are fyi', () => {
+  assert.strictEqual(inferStatus({ messages: [msg('gobiodynamic@gmail.com', { subject: 'Accepted: ABO Working Group @ Thu Sep 10', at: 1 })] }), 'fyi');
+  assert.strictEqual(inferStatus({ messages: [msg('quickbooks@notification.intuit.com', { subject: 'Invoice JH102520 from Jiffy Hitch', at: 1 })] }), 'fyi');
+  assert.strictEqual(inferStatus({ messages: [msg('drive-shares-dm-noreply@google.com', { subject: 'Document shared with you: "2026.09.09"', at: 1 })] }), 'fyi');
+});
+
+check('reconciliation keeps a fresh ask put to him after his last word', () => {
+  const workspace = {
+    status: 'waiting_on_other', latestMessage: { subject: 'Re: Connecting BAV & Heart Spring Gardens' },
+    messages: [msg('ben@berkshireagventures.org', { at: 1 }), msg('bendavis354@gmail.com', { at: 2 })]
+  };
+  const later = { ...msg('ben@berkshireagventures.org', { subject: 'Re: Connecting BAV & Heart Spring Gardens', at: 3 }), toMeOnly: true };
+  const personal = { status: 'waiting_on_ben', latestMessage: later, messages: [msg('bendavis354@gmail.com', { at: 2 }), later] };
+  reconcileThreadStatus([workspace, personal]);
+  assert.strictEqual(personal.status, 'waiting_on_ben', 'they wrote to him after he replied');
+});
+
+check('reconciliation still silences a copy his later reply answered', () => {
+  const asked = { ...msg('coree@biodynamics.com', { subject: 'quick notes from today’s meeting', at: 1 }), namesMe: true };
+  const personal = { status: 'waiting_on_ben', latestMessage: asked, messages: [asked] };
+  const workspace = {
+    status: 'waiting_on_other', latestMessage: { subject: 'Re: quick notes from today’s meeting' },
+    messages: [asked, msg('benjamin@biodynamics.com', { at: 2 })]
+  };
+  reconcileThreadStatus([workspace, personal]);
+  assert.strictEqual(personal.status, 'thread_continued', 'his reply came after the ask');
+});
+
 check('short subjects never pool, since they collide across threads', () => {
   const a = { status: 'waiting_on_ben', latestMessage: { subject: 'Hi' }, messages: [msg('x@y.com', { at: 1 })] };
   const b = { status: 'waiting_on_other', latestMessage: { subject: 'Hi' }, messages: [msg('ben@heartspringgardens.org', { at: 2 })] };

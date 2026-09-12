@@ -46,6 +46,21 @@ export function carryForwardTasks(todayTodos, priorTasks) {
 }
 
 /**
+ * Drop carried-forward text items whose chat this run has judged as needing
+ * nothing — a tapback, a closing "OK will do", a group question put to someone
+ * else. Only items the export can still see are dropped: the chat is present
+ * and was triaged, so the verdict is current. An item whose chat has aged out
+ * of the export is left alone; nothing can be said about it.
+ */
+export function dropSettledTasks(tasks, settledKeys) {
+  const settled = settledKeys instanceof Set ? settledKeys : new Set(settledKeys || []);
+  if (!settled.size) return tasks;
+  return (tasks || []).filter(t =>
+    !(t.origin === 'imessage' && t.carriedForward && t.status !== 'completed' && settled.has(t.conversationKey))
+  );
+}
+
+/**
  * Collapse tasks that ask for the same thing.
  *
  * One message can reach the pipeline twice — the Workspace copy over OAuth and

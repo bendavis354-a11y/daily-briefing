@@ -84,7 +84,9 @@ export function groupConversations(messages, benAccounts) {
     convo.accountsSeen.add(msg.sourceAccount);
     convo.messages.push({
       ...msg,
-      fromMe: isFromBen(msg.from, benAccounts)
+      fromMe: isFromBen(msg.from, benAccounts),
+      toMeOnly: isToMeOnly(msg, benAccounts),
+      namesMe: greetingNamesBen(msg.snippet)
     });
   }
 
@@ -121,10 +123,18 @@ function participantCount(convo) {
  * most work threads and few personal ones, and this only misfires on threads he
  * has already spoken in.
  *
- * Deliberately narrow. Two-party threads keep reading as waiting on Ben even
- * when the last word was an acknowledgement, because "thanks, will do" and "so
- * can you send it?" are not reliably distinguishable, and the cost of wrongly
- * hiding a real ask is much higher than the cost of listing one he can ignore.
+ * The committee test looks at the whole thread's participants, which is the
+ * wrong lens for the newest message: a thread that began with an introducer
+ * copied in and has since become a two-way exchange was reading as "continued
+ * without you" while its latest message was a question put to Ben alone. So
+ * a message addressed to him individually — he is the only To recipient, or
+ * its greeting names him — waits on him whatever the thread's history.
+ *
+ * Deliberately narrow otherwise. Two-party threads keep reading as waiting on
+ * Ben even when the last word was an acknowledgement, because "thanks, will
+ * do" and "so can you send it?" are not reliably distinguishable, and the cost
+ * of wrongly hiding a real ask is much higher than the cost of listing one he
+ * can ignore.
  */
 export function inferStatus(convo) {
   const messages = convo.messages || [];
@@ -132,8 +142,39 @@ export function inferStatus(convo) {
   if (!latest) return 'unknown';
   if (latest.fromMe) return 'waiting_on_other';
   if (looksNoReplyNeeded(latest)) return 'fyi';
+  if (directedAtMe(latest)) return 'waiting_on_ben';
   if (messages.some(m => m.fromMe) && participantCount(convo) > 2) return 'thread_continued';
   return 'waiting_on_ben';
+}
+
+/** The message was put to Ben individually, not to a group he is part of. */
+export function directedAtMe(msg) {
+  return Boolean(msg && (msg.toMeOnly || msg.namesMe));
+}
+
+function addressesIn(header) {
+  return [...String(header || '').matchAll(/[a-z0-9._%+-]+@[a-z0-9.-]+/gi)].map(m => m[0].toLowerCase());
+}
+
+// The message went to Ben and no one else: every To address is his and nobody
+// is copied. Reply-all in a committee thread puts the previous sender alone in
+// To with the rest in Cc, so a Cc list or a plural greeting ("Hey everyone",
+// "Dear all") means the message is to the group, whatever To says.
+const PLURAL_GREETING = /\b(everyone|everybody|all|friends|folks|team|guys|colleagues|board)\b/i;
+function isToMeOnly(msg, benAccounts) {
+  const to = addressesIn(msg.to);
+  if (!to.length) return false;
+  const mine = (benAccounts || []).map(e => String(e).toLowerCase());
+  if (!to.every(a => mine.includes(a))) return false;
+  if (addressesIn(msg.cc).some(a => !mine.includes(a))) return false;
+  return !PLURAL_GREETING.test(String(msg.snippet || '').slice(0, 40));
+}
+
+// "Hi Ben", "Morning Ben -", "Dear Marc, Jean-David and Ben": the opening of
+// the message names him. Only the opening is read, since quoted text further
+// down carries his name on every reply.
+function greetingNamesBen(snippet) {
+  return /\bben\b/i.test(String(snippet || '').slice(0, 60));
 }
 
 /**
@@ -149,6 +190,10 @@ export function inferStatus(convo) {
  * mailbox, no copy of it may read as awaiting his first reply. Only ever
  * downgrades a nag, never promotes a thread to needing attention, so the worst
  * case is a thread listed one rank calmer than it might deserve.
+ *
+ * One exception: a copy whose latest message was put to him individually and
+ * postdates his last word anywhere is a fresh ask, and stays waiting on him.
+ * His earlier reply is not an answer to a question asked after it.
  *
  * Matched on normalized subject, since the participant sets legitimately differ
  * between copies (his two addresses). Short subjects are skipped, as "Hi" or
@@ -169,8 +214,13 @@ export function reconcileThreadStatus(convos) {
       (c.messages || []).some(m => m.fromMe) || c.status === 'waiting_on_other'
     );
     if (!benSpoke) continue;
+    const benLastAt = Math.max(0, ...group.flatMap(c =>
+      (c.messages || []).filter(m => m.fromMe).map(m => m.internalDate || 0)));
     for (const c of group) {
-      if (c.status === 'waiting_on_ben') c.status = 'thread_continued';
+      if (c.status !== 'waiting_on_ben') continue;
+      const latest = c.latestMessage || {};
+      if (directedAtMe(latest) && (latest.internalDate || 0) > benLastAt) continue;
+      c.status = 'thread_continued';
     }
   }
   return convos;
@@ -181,6 +231,12 @@ function isFromBen(fromHeader, benAccounts) {
   return benAccounts.some(email => from.includes(email.toLowerCase()));
 }
 
+// Machine mail: nothing here awaits a reply. Calendar responses ("Accepted:
+// ABO Working Group"), Drive shares and invoice notifications had been landing
+// in the correspondence queue as if a person had written.
+const NOTIFICATION_SENDER = /no-?_?reply|donotreply|do-not-reply|notification|mailer-daemon|calendar-notification|drive-shares|docs\.google\.com/;
+const NOTIFICATION_SUBJECT = /^(accepted|declined|tentatively accepted|tentative|invitation|updated invitation|cancell?ed event|reminder):/;
+
 function looksNoReplyNeeded(msg) {
   const labels = msg.labelIds || [];
   const subject = String(msg.subject || '').toLowerCase();
@@ -190,8 +246,8 @@ function looksNoReplyNeeded(msg) {
     labels.includes('CATEGORY_SOCIAL') ||
     subject.includes('newsletter') ||
     subject.includes('receipt') ||
-    from.includes('no-reply') ||
-    from.includes('noreply')
+    NOTIFICATION_SUBJECT.test(subject) ||
+    NOTIFICATION_SENDER.test(from)
   );
 }
 
