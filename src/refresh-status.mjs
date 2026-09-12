@@ -30,6 +30,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { scanConfiguredMailboxes } from './gmail-api.mjs';
+import { loadAccounts } from './accounts.mjs';
 import { dedupeMessages, groupConversations, reconcileThreadStatus } from './continuity.mjs';
 import { encryptState, decryptState, STATE_BRANCH } from './state-store.mjs';
 
@@ -93,7 +94,7 @@ function publish(payload) {
 
 async function main() {
   const now = new Date();
-  const accounts = JSON.parse(process.env.GMAIL_ACCOUNTS_JSON || '[]');
+  const accounts = loadAccounts();
   const benEmails = accounts.map(a => a.email.toLowerCase());
   if (!benEmails.length) throw new Error('GMAIL_ACCOUNTS_JSON is empty');
 

@@ -19,6 +19,49 @@
  *   4. accounts[0] (legacy fallback)
  */
 
+/**
+ * Read the account list from the environment.
+ *
+ * Tolerant of one specific paste error, because it is the likeliest way this
+ * ever breaks and the raw failure is unreadable. Copying the value out of a
+ * shell or a settings box brings the surrounding quotes along, so the variable
+ * holds `'[{"email"…}]'` rather than `[{"email"…}]`, and JSON.parse answers
+ * "Unexpected token '''" — which says nothing about which variable is wrong or
+ * what to do about it.
+ *
+ * Stripping matched outer quotes is safe: the value must be a JSON array, so
+ * anything inside quotes was never valid to begin with. Anything else still
+ * throws, but throws with the variable named and the value's opening shown.
+ */
+export function loadAccounts(raw = process.env.GMAIL_ACCOUNTS_JSON) {
+  let text = String(raw ?? '').trim();
+  if (!text) return [];
+
+  const first = text[0];
+  const last = text[text.length - 1];
+  if ((first === "'" || first === '"') && last === first && text.length > 1) {
+    const inner = text.slice(1, -1).trim();
+    if (inner.startsWith('[') || inner.startsWith('{')) {
+      console.warn('GMAIL_ACCOUNTS_JSON is wrapped in quotes — stripping them. Re-save it without the surrounding quotes.');
+      text = inner;
+    }
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    throw new Error(
+      `GMAIL_ACCOUNTS_JSON is not valid JSON (${err.message}). ` +
+      `It must be a JSON array and nothing else — no surrounding quotes. Value begins: ${text.slice(0, 24)}…`
+    );
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error('GMAIL_ACCOUNTS_JSON must be a JSON array of account objects.');
+  }
+  return parsed;
+}
+
 export function accountAuth(account) {
   return (account?.auth || 'oauth').toLowerCase();
 }

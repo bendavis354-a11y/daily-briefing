@@ -37,7 +37,7 @@ variables → Actions. They are the same values the daily run already uses:
 |---|---|
 | `GOOGLE_OAUTH_CLIENT_ID` | the Google OAuth app |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | the same app's secret |
-| `GMAIL_ACCOUNTS_JSON` | the account list, verbatim |
+| `GMAIL_ACCOUNTS_JSON` | the account list, as raw JSON with no surrounding quotes |
 | `GMAIL_REFRESH_TOKEN_HEARTSPRING` | durable Workspace token |
 | `GMAIL_REFRESH_TOKEN_BIODYNAMICS` | durable Workspace token |
 | `BRIEFING_PASSWORD` | the page password, which is also the encryption key |
@@ -67,6 +67,7 @@ node src/continuity.test.mjs
 node src/tasks.test.mjs
 node src/imessage-store.test.mjs
 node src/refresh-status.test.mjs
+node src/accounts.test.mjs
 ```
 
 ## What never goes in the repo

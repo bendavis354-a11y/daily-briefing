@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { getAccessToken } from './google-auth.mjs';
-import { oauthAccounts } from './accounts.mjs';
+import { oauthAccounts, loadAccounts } from './accounts.mjs';
 
 const GMAIL = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const HEADERS = [
@@ -18,7 +18,7 @@ const HEADERS = [
 ];
 
 export async function scanConfiguredMailboxes() {
-  const accounts = JSON.parse(process.env.GMAIL_ACCOUNTS_JSON || '[]');
+  const accounts = loadAccounts();
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
   const results = [];
