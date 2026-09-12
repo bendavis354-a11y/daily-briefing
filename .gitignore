@@ -9,3 +9,4 @@ mac/config.json
 .config/
 state.enc
 imessages.enc
+status.enc

@@ -9,7 +9,7 @@ import { emptyState } from './drive-state.mjs';
 import { loadDurableState } from './state-store.mjs';
 import { scanConfiguredMailboxes, loadConnectorMessages } from './gmail-api.mjs';
 import { dedupeMessages, groupConversations, reconcileThreadStatus } from './continuity.mjs';
-import { isConnectorAccount } from './accounts.mjs';
+import { isConnectorAccount, loadAccounts } from './accounts.mjs';
 import { loadImessageExport, tokenExpiryWarning, REPAIR_COMMAND } from './imessage-store.mjs';
 import { carryForwardTasks, applyReplyCompletions, retainTasks, dedupeTasks, extractReplyObservations } from './tasks.mjs';
 import { listTomorrowEventsForAccount, listCalendars, listEvents } from './calendar-api.mjs';
@@ -64,7 +64,7 @@ const weekMax = `${localDate(addDays(now, 6), TZ)}T23:59:59${NY_OFFSET}`;
 console.log(`STEP 1: today=${todayISO}  schedule day=${scheduleISO}  offset=${NY_OFFSET}  week window=${weekMin} to ${weekMax}`);
 
 // ── Credentials ───────────────────────────────────────────────────────────────
-const accounts = JSON.parse(process.env.GMAIL_ACCOUNTS_JSON || '[]');
+const accounts = loadAccounts();
 const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
 const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
 const liveUrl = process.env.GITHUB_PAGES_URL || '';
