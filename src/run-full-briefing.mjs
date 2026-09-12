@@ -11,7 +11,7 @@ import { scanConfiguredMailboxes, loadConnectorMessages } from './gmail-api.mjs'
 import { dedupeMessages, groupConversations, reconcileThreadStatus } from './continuity.mjs';
 import { isConnectorAccount, loadAccounts } from './accounts.mjs';
 import { loadImessageExport, tokenExpiryWarning, REPAIR_COMMAND } from './imessage-store.mjs';
-import { findMeetingProposal } from './meeting-detect.mjs';
+import { findMeetingProposal, isMeetingProposalText, isFresh } from './meeting-detect.mjs';
 import { carryForwardTasks, applyReplyCompletions, retainTasks, dedupeTasks, extractReplyObservations } from './tasks.mjs';
 import { listTomorrowEventsForAccount, listCalendars, listEvents } from './calendar-api.mjs';
 
@@ -436,20 +436,33 @@ for (const convo of activeConvos) {
     }
   }
 
-  // Calendar proposals — only for a thread still waiting on Ben, as the other
-  // builders do; a meeting he has already answered is his to schedule.
-  if (convo.status === 'waiting_on_ben' && !latest.fromMe && looksLikeMeeting(latest)) {
+  // Calendar proposals — the same test texts get: the latest message must
+  // itself invite and name a time, come from a real correspondent, and the
+  // thread must still be waiting on Ben. The subject may supply the day
+  // ("Lunch Thursday?") but never the invitation: an old thread's subject
+  // keeps naming a meeting long after it happened.
+  // Both statuses mean the latest message is theirs and unanswered: either he
+  // never replied in the thread, or he did and they have written since.
+  const realSender = sender.email && !sender.email.includes('no-reply') && !sender.email.includes('noreply');
+  const awaitingBen = convo.status === 'waiting_on_ben' || convo.status === 'thread_continued';
+  const latestAt = Number(latest.internalDate) || Date.parse(latest.date || '') || 0;
+  // Gmail snippets arrive HTML-encoded ("I&#39;m"); decode before matching so
+  // "let's" is seen as written, and before quoting so the page shows prose.
+  const snippetText = decodeEntities(snippet);
+  if (awaitingBen && !latest.fromMe && realSender && !isAutoReply(latest) && isFresh(latestAt, now) &&
+      isMeetingProposalText(snippetText, latest.subject)) {
+    const askText = snippetText.replace(/\s+/g, ' ').trim();
     calendarProposals.push({
       id: `proposal-${convo.conversationKey}`,
       conversationKey: convo.conversationKey,
       account: item.account,
       sourceAccount: item.sourceAccount,
-      title: (latest.subject || 'Meeting').replace(/^(re:|fwd:|fw:)\s*/i, '').trim(),
+      title: (latest.subject || 'Meeting').replace(/^((re|fwd?|fw)\s*:\s*)+/i, '').trim(),
       start: null,
       end: null,
       location: '',
-      detail: snippet.slice(0, 200),
-      context: `From: ${sender.name || sender.email}`,
+      detail: askText.slice(0, 200),
+      context: `${sender.name || sender.email} wrote: “${askText.slice(0, 140)}${askText.length > 140 ? '…' : ''}”`,
       sourceSender: latest.from,
       sourceSubject: latest.subject,
       calendarId: 'primary'
@@ -517,7 +530,7 @@ if (imessageData && imessageStatus === 'fresh') {
     // An invitation naming a time, from the other party, that Ben has not yet
     // answered. Ben's own messages never count, and an answered ask is his to
     // drive; see meeting-detect.mjs.
-    const meetingAsk = findMeetingProposal(chatMsgs);
+    const meetingAsk = findMeetingProposal(chatMsgs, { now });
     const hasMeetingProposal = Boolean(meetingAsk);
 
     let isActionable = needsReply || isUrgentMsg || hasMeetingProposal;
@@ -794,6 +807,14 @@ function isUrgent(msg) {
   );
 }
 
+function decodeEntities(s) {
+  return String(s || '')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
+}
+
 function isAutoReply(msg) {
   const subject = String(msg.subject || '').toLowerCase();
   return (
@@ -813,17 +834,6 @@ function isBusinessEmail(msg, accounts) {
   const personalDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com', 'me.com', 'aol.com', 'protonmail.com'];
   if (domain && !personalDomains.some(d => domain.endsWith(d))) return true;
   return false;
-}
-
-function looksLikeMeeting(msg) {
-  const subject = String(msg.subject || '').toLowerCase();
-  const snippet = String(msg.snippet || '').toLowerCase();
-  return (
-    (subject.includes('meeting') || subject.includes('call') || subject.includes('schedule') ||
-     subject.includes('appointment') || subject.includes('zoom') || subject.includes('conference')) &&
-    (snippet.includes('availability') || snippet.includes('are you free') || snippet.includes('pick a time') ||
-     snippet.includes('calendar') || snippet.includes('when') || snippet.includes('schedule'))
-  );
 }
 
 function needsTodo(msg, status, prior) {

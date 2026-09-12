@@ -74,6 +74,37 @@ check('"come over this weekend" from the other party qualifies', () => {
   assert.ok(!isMeetingProposalText('Cool'));
 });
 
+// ── email snippets go through the same test ──────────────────────────────────
+check('an offer of windows in an ordinary email thread qualifies', () => {
+  assert.ok(isMeetingProposalText('Re: Connecting BAV & Heart Spring Gardens Roger that, here’s next week’s availability: - Tue, 3-5pm - Wed, 9am-Noon - Fri, 10am-1pm'));
+  assert.ok(isMeetingProposalText('as far as later this week for a quick call I’m available between 2-5pm on Friday (9/11), would you be available then?'));
+});
+
+check('a stale subject line cannot supply the invitation', () => {
+  const subject = 'Re: ABO Meeting on Monday August 10';
+  const snippet = 'Hey everyone, I’m happy to share an update on the Demeter rebrand effort, including our vision for a new name and logo.';
+  assert.ok(!isMeetingProposalText(snippet, subject));
+  assert.ok(isMeetingProposalText('Can we do 2pm?', 'Lunch Thursday?'), 'subject may still supply the day');
+});
+
+check('an offer of peaches is not a meeting, even with "would you" and a day', () => {
+  assert.ok(!isMeetingProposalText('Ben would you and your family like some peaches or peach crisp? We will give some away Saturday.'));
+  assert.ok(isMeetingProposalText('Would you be around Saturday afternoon to pick some up?'));
+});
+
+check('an invitation older than a week is stale', () => {
+  const now = new Date('2026-09-12T20:00:00Z');
+  const old = [{ text: 'Can we meet Tuesday afternoon?', is_from_me: false, date: '2026-07-13T14:00:00Z' }];
+  assert.strictEqual(findMeetingProposal(old, { now }), null);
+  const fresh = [{ text: 'Can we meet Tuesday afternoon?', is_from_me: false, date: '2026-09-10T14:00:00Z' }];
+  assert.ok(findMeetingProposal(fresh, { now }));
+});
+
+check('"available" without a time is not an invitation', () => {
+  assert.ok(!isMeetingProposalText('The new catalogue is now available online.'));
+  assert.ok(!isMeetingProposalText('Prefect Ben, I will send you a Zoom Link morning of.'));
+});
+
 check('unansweredTail returns only what follows Ben’s last message', () => {
   const chat = [them('a', 8), me('b', 9), them('c', 10), them('d', 11)];
   assert.deepStrictEqual(unansweredTail(chat).map(m => m.text), ['c', 'd']);

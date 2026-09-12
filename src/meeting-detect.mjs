@@ -7,16 +7,23 @@
  * ("can we", "want to", "come over", "are you around"…) and a time reference
  * ("Tuesday", "tomorrow afternoon", "3:30"). Ben's own messages never raise
  * one — he knows what he offered — and once he has replied the thread is his
- * to drive.
+ * to drive. Email uses the same message-level test on the latest message's
+ * subject and snippet, gated on the thread still waiting on Ben.
  *
  * The previous detector pooled every message in the chat, Ben's included, and
  * fired on any meeting word near any time word across the whole pool, which
  * proposed a "Meet with…" for chats whose last message was "Cool".
  */
 
+// An invitation must be fresh to be actionable: the time it names has passed
+// or been settled long before a week is out.
+export const PROPOSAL_MAX_AGE_DAYS = 7;
+
 // An invitation, as opposed to a mention: a question or offer directed at Ben.
+// A modal needs a meeting verb after it — "could you do 3pm", "should I swing
+// by" — so "would you like some peaches" does not count.
 const INVITE = new RegExp([
-  String.raw`\b(can|could|shall|should|would|will|do|did)\s+(we|you|i|u)\b`,
+  String.raw`\b(can|could|shall|should|would|will)\s+(we|you|i|u)\s+(please\s+)?(meet|do|come|make|join|be|have|talk|call|get|grab|stop|swing|drop|visit|chat|zoom|see|catch|hop|find|schedule|set|pick|plan|try)\b`,
   String.raw`\b(want|wanna|like)\s+to\b`,
   String.raw`\bare\s+you\s+(free|around|available|up\s+for|at|in\s+town|home)\b`,
   String.raw`\b(let'?s|lets)\b`,
@@ -24,10 +31,13 @@ const INVITE = new RegExp([
   String.raw`\bwork(s)?\s+for\s+you\b`,
   String.raw`\b(come|coming|stop|stopping|swing|swinging|drop|dropping)\s+(over|by)\b`,
   String.raw`\b(get|getting)\s+together\b`,
-  String.raw`\b(meet|meeting|catch)\s+(up|you|with|for|at|on)\b`,
+  String.raw`\b(meet|meeting|catch)\s+(up|you|with|for|at)\b`,
   String.raw`\b(grab|have)\s+(a\s+)?(coffee|lunch|dinner|drink|bite|call|chat)\b`,
   String.raw`\b(call|zoom|facetime)\s+(you|me|tomorrow|tonight|later|at|on|this|next)\b`,
-  String.raw`\bvisit\b`
+  String.raw`\bvisit\b`,
+  // "I'm available Tuesday 3-5" / "here's my availability": an offer of
+  // windows is an invitation to pick one.
+  String.raw`\bavailab(le|ility)\b`
 ].join('|'), 'i');
 
 // Something that pins the invitation to a time: a day, a part of a day, a
@@ -47,10 +57,15 @@ function textOf(m) {
   return String(m?.text || m?.body || '');
 }
 
-/** True when this one message both invites and names a time. */
-export function isMeetingProposalText(text) {
+/**
+ * True when this one message both invites and names a time. The invitation
+ * must be in the message body; the time may also come from `heading` (an
+ * email subject such as "Lunch Thursday?"). A subject alone never invites:
+ * an old thread's subject keeps naming a meeting long after it happened.
+ */
+export function isMeetingProposalText(text, heading = '') {
   const t = String(text || '');
-  return INVITE.test(t) && TIME_REF.test(t);
+  return INVITE.test(t) && (TIME_REF.test(t) || TIME_REF.test(String(heading || '')));
 }
 
 /**
@@ -64,15 +79,24 @@ export function unansweredTail(chatMsgs) {
   return msgs.slice(lastMine + 1);
 }
 
+/** True when the message is recent enough for its invitation to still stand. */
+export function isFresh(dateLike, now = new Date(), maxAgeDays = PROPOSAL_MAX_AGE_DAYS) {
+  const t = typeof dateLike === 'number' ? dateLike : Date.parse(dateLike || '');
+  if (!t) return false;
+  return now - t <= maxAgeDays * 86400000;
+}
+
 /**
  * The message that proposes a meeting Ben has not yet answered, or null.
  * The most recent qualifying message wins, so the proposal reflects the
- * latest version of the ask.
+ * latest version of the ask. Messages older than a week are ignored.
  */
-export function findMeetingProposal(chatMsgs) {
+export function findMeetingProposal(chatMsgs, { now = new Date() } = {}) {
   const tail = unansweredTail(chatMsgs);
   for (let i = tail.length - 1; i >= 0; i--) {
-    if (isMeetingProposalText(textOf(tail[i]))) return tail[i];
+    const m = tail[i];
+    if (!isFresh(m.date || m.timestamp, now)) continue;
+    if (isMeetingProposalText(textOf(m))) return m;
   }
   return null;
 }
