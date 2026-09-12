@@ -9,8 +9,9 @@ import { emptyState } from './drive-state.mjs';
 import { loadDurableState } from './state-store.mjs';
 import { scanConfiguredMailboxes, loadConnectorMessages } from './gmail-api.mjs';
 import { dedupeMessages, groupConversations } from './continuity.mjs';
-import { pickDriveAccount, isConnectorAccount } from './accounts.mjs';
-import { carryForwardTasks, applyReplyCompletions, retainTasks, extractReplyObservations } from './tasks.mjs';
+import { isConnectorAccount } from './accounts.mjs';
+import { loadImessageExport } from './imessage-store.mjs';
+import { carryForwardTasks, applyReplyCompletions, retainTasks, dedupeTasks, extractReplyObservations } from './tasks.mjs';
 import { listTomorrowEventsForAccount, listCalendars, listEvents } from './calendar-api.mjs';
 
 // ── STEP 1: Dates ─────────────────────────────────────────────────────────────
@@ -63,8 +64,6 @@ console.log(`STEP 1: today=${todayISO}  schedule day=${scheduleISO}  offset=${NY
 const accounts = JSON.parse(process.env.GMAIL_ACCOUNTS_JSON || '[]');
 const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
 const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
-const driveFileId = process.env.DRIVE_STATE_FILE_ID;
-const driveImessageFileId = process.env.DRIVE_IMESSAGE_FILE_ID;
 const liveUrl = process.env.GITHUB_PAGES_URL || '';
 
 if (!clientId || !clientSecret) throw new Error('Missing GOOGLE_OAUTH_CLIENT_ID or GOOGLE_OAUTH_CLIENT_SECRET');
@@ -84,14 +83,8 @@ try {
 // Plaintext copy for the agent's analysis step (storylines, patterns, tasks).
 fs.writeFileSync('/tmp/current-state.json', JSON.stringify(assistantState, null, 2));
 
-// A Drive token is still used (best-effort) for the iMessage export read only.
-let driveToken = null;
-try {
-  const driveAccount = pickDriveAccount(accounts);
-  driveToken = await getAccessToken({ clientId, clientSecret, refreshToken: process.env[driveAccount.refreshTokenEnv] });
-} catch (err) {
-  console.warn(`Drive token unavailable (${err.message}) — continuing without iMessage export`);
-}
+// No Drive token is minted any more: memory lives in state.enc and the iMessage
+// export in imessages.enc, both on the deploy branch. Nothing else read Drive.
 
 const priorConvos = assistantState.conversations || {};
 const ignoredKeys = new Set(Object.keys(assistantState.ignoredConversations || {}));
@@ -102,37 +95,23 @@ const snoozedKeys = new Set(
 );
 
 // ── STEP 2B: Load iMessage export ─────────────────────────────────────────────
+// Read from the repo (imessages.enc on the deploy branch), not Drive. See
+// imessage-store.mjs for why the Drive path could never have worked.
 console.log('STEP 2B: Loading iMessage export…');
-let imessageData = null;
-let imessageStatus = 'missing';
-let imessageAgeHours = null;
+const imessageResult = loadImessageExport({ now });
+const imessageData = imessageResult.data;
+const imessageStatus = imessageResult.status;
+const imessageAgeHours = imessageResult.ageHours;
 
-if (driveImessageFileId && driveToken) {
-  try {
-    const res = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${driveImessageFileId}?alt=media`,
-      { headers: { authorization: `Bearer ${driveToken}` } }
-    );
-    if (!res.ok) {
-      console.log(`iMessage Drive read failed: ${res.status} — continuing without iMessages`);
-      imessageStatus = 'missing';
-    } else {
-      imessageData = await res.json();
-      const exportedAt = new Date(imessageData.exportedAt || 0);
-      const ageHours = (now - exportedAt) / 3600000;
-      imessageAgeHours = ageHours;
-      if (ageHours > 6) {
-        console.log(`iMessage export is stale (${ageHours.toFixed(1)}h old, exported at ${imessageData.exportedAt})`);
-        imessageStatus = 'stale';
-      } else {
-        imessageStatus = 'fresh';
-        console.log(`iMessage export loaded: ${imessageData.messages?.length || 0} messages, exported ${imessageData.exportedAt}`);
-      }
-    }
-  } catch (err) {
-    console.log(`iMessage load error: ${err.message} — continuing without iMessages`);
-    imessageStatus = 'missing';
-  }
+if (imessageStatus === 'fresh') {
+  console.log(`iMessage export loaded from ${imessageResult.source}: ${imessageData.messages?.length || 0} messages, exported ${imessageData.exportedAt}`);
+} else if (imessageStatus === 'stale') {
+  const age = imessageAgeHours != null ? `${imessageAgeHours.toFixed(1)}h old` : 'undated';
+  console.log(`iMessage export is stale (${age}, exported at ${imessageData?.exportedAt || 'unknown'})`);
+} else if (imessageStatus === 'error') {
+  console.error(`iMessage export failed to decrypt: ${imessageResult.error}`);
+} else {
+  console.log(`iMessage export unavailable (${imessageResult.error || 'not found'}) — continuing without iMessages`);
 }
 
 // ── STEP 3: Scan Gmail ────────────────────────────────────────────────────────
@@ -591,6 +570,19 @@ if (imessageData && imessageStatus === 'fresh') {
     needsReply: false,
     todoText: null
   });
+} else if (imessageStatus === 'error') {
+  imessageSection.push({
+    id: 'imsg-error-notice',
+    sender: 'System',
+    handle: '',
+    chat: 'system',
+    date: now.toISOString(),
+    summary: `iMessage export could not be decrypted (${imessageResult.error}). ` +
+      `The Mac exporter and this pipeline disagree on STATE_ENCRYPTION_KEY — see mac/README.md.`,
+    priority: 'high',
+    needsReply: false,
+    todoText: null
+  });
 } else {
   imessageSection.push({
     id: 'imsg-missing-notice',
@@ -598,7 +590,8 @@ if (imessageData && imessageStatus === 'fresh') {
     handle: '',
     chat: 'system',
     date: now.toISOString(),
-    summary: 'iMessage export was unavailable for this run (Drive file unreadable or no Drive token).',
+    summary: `No iMessage export found on the deploy branch (${imessageResult.error || 'not found'}). ` +
+      `Either the Mac exporter has never run or it cannot push — see mac/README.md.`,
     priority: 'low',
     needsReply: false,
     todoText: null
@@ -617,7 +610,7 @@ console.log(`iMessages: scanned=${imessagesScanned}, actionable=${imessagesActio
 const merged = carryForwardTasks(todos, assistantState.openTasks || []);
 applyReplyCompletions(merged, conversations, now);
 todos.length = 0;
-todos.push(...retainTasks(merged, now));
+todos.push(...dedupeTasks(retainTasks(merged, now)));
 const completedNow = todos.filter(t => t.status === 'completed').length;
 console.log(`Action items: ${todos.length} total, ${completedNow} auto-completed by replies`);
 
@@ -680,8 +673,6 @@ console.log(`Actions: replies=${trimmedReplies.length} todos=${todos.length} cal
 
 // Export state payload for update step
 const statePayload = {
-  driveAccessToken: driveToken,
-  driveFileId,
   conversations: activeConvos.map(c => ({
     conversationKey: c.conversationKey,
     status: c.status,

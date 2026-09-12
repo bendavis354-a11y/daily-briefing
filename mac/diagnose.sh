@@ -50,8 +50,8 @@ if launchctl list 2>/dev/null | grep -q "$LABEL"; then
   case "$last_exit" in
     0|-) ;;
     3) add_problem "Agent's last run exited 3: cannot read chat.db — Full Disk Access missing." ;;
-    4) add_problem "Agent's last run exited 4: Google OAuth refresh failed. If the config holds a consumer @gmail.com token, it expired after 7 days and will again — switch to a Workspace account token with Drive scope. See mac/README.md." ;;
-    5) add_problem "Agent's last run exited 5: Drive upload failed — check drive_file_id." ;;
+    5) add_problem "Agent's last run exited 5: push to GitHub failed — check github_token (fine-grained PAT, Contents: Read and write, unexpired) and github_repo/github_branch. See the log below." ;;
+    6) add_problem "Agent's last run exited 6: the 'cryptography' package is missing. Install it: python3 -m pip install --user cryptography" ;;
     2) add_problem "Agent's last run exited 2: config missing or incomplete at $CONFIG_FILE" ;;
     *) add_problem "Agent's last run exited $last_exit — see the log below." ;;
   esac
@@ -106,7 +106,7 @@ if [[ -f "$CONFIG_FILE" ]]; then
   if [[ -n "$PYTHON_BIN" ]]; then
     "$PYTHON_BIN" - "$CONFIG_FILE" <<'PY'
 import json, sys
-required = ("client_id", "client_secret", "refresh_token", "drive_file_id")
+required = ("github_token", "github_repo", "encryption_key")
 try:
     cfg = json.load(open(sys.argv[1]))
 except Exception as exc:
@@ -114,7 +114,9 @@ except Exception as exc:
     sys.exit(0)
 for key in required:
     val = cfg.get(key)
-    placeholder = isinstance(val, str) and ("..." in val or val.strip() == "")
+    placeholder = isinstance(val, str) and (
+        "..." in val or val.strip() == "" or val.startswith("REPLACE_WITH")
+    )
     state = "MISSING" if not val else ("STILL A PLACEHOLDER" if placeholder else "set")
     print(f"    {key}: {state}")
 PY
@@ -147,6 +149,86 @@ PY
   else
     add_problem "Cannot read chat.db — grant Full Disk Access to $PYTHON_BIN in System Settings > Privacy & Security > Full Disk Access."
   fi
+fi
+
+# 7. Is the AES dependency importable by the python launchd will use?
+section "7. Encryption dependency"
+if [[ -n "$PYTHON_BIN" ]]; then
+  if "$PYTHON_BIN" -c "from cryptography.hazmat.primitives.ciphers.aead import AESGCM" 2>/dev/null; then
+    note "cryptography: importable — AES-256-GCM available."
+  else
+    add_problem "The 'cryptography' package is missing or broken for $PYTHON_BIN. Install it: $PYTHON_BIN -m pip install --user cryptography"
+  fi
+fi
+
+# 8. Can the token actually write to the branch? (the check that matters most —
+#    a silently unwritable destination is exactly how the old Drive path failed)
+section "8. GitHub write access"
+if [[ -f "$CONFIG_FILE" && -n "$PYTHON_BIN" ]]; then
+  "$PYTHON_BIN" - "$CONFIG_FILE" <<'PY'
+import json, sys, urllib.error, urllib.parse, urllib.request
+
+try:
+    cfg = json.load(open(sys.argv[1]))
+except Exception as exc:
+    print(f"    SKIPPED — config unreadable: {exc}")
+    sys.exit(0)
+
+token, repo = cfg.get("github_token"), cfg.get("github_repo")
+branch = cfg.get("github_branch", "claude/briefing")
+if not token or not repo or str(token).startswith("REPLACE_WITH"):
+    print("    SKIPPED — github_token / github_repo not filled in yet.")
+    sys.exit(0)
+
+def call(path):
+    req = urllib.request.Request(
+        f"https://api.github.com{path}",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "ben-briefing-diagnose",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+try:
+    info = call(f"/repos/{repo}")
+    perms = info.get("permissions", {})
+    can_push = perms.get("push") or perms.get("maintain") or perms.get("admin")
+    print(f"    repo {repo}: reachable, push={'yes' if can_push else 'NO'}")
+    if not can_push:
+        print("    PROBLEM: token cannot write. Needs Contents: Read and write.")
+        sys.exit(1)
+except urllib.error.HTTPError as exc:
+    print(f"    PROBLEM: cannot reach {repo}: {exc.code} — token invalid, expired, or not scoped to this repo.")
+    sys.exit(1)
+except Exception as exc:
+    print(f"    PROBLEM: network error contacting GitHub: {exc}")
+    sys.exit(1)
+
+try:
+    call(f"/repos/{repo}/branches/{urllib.parse.quote(branch)}")
+    print(f"    branch {branch}: exists")
+except urllib.error.HTTPError as exc:
+    print(f"    PROBLEM: branch {branch} not found ({exc.code}).")
+    sys.exit(1)
+
+try:
+    meta = call(f"/repos/{repo}/contents/imessages.enc?ref={urllib.parse.quote(branch)}")
+    print(f"    imessages.enc: present, {meta.get('size', '?')} bytes")
+except urllib.error.HTTPError as exc:
+    if exc.code == 404:
+        print("    imessages.enc: not yet published (normal before the first run)")
+    else:
+        print(f"    imessages.enc: unexpected status {exc.code}")
+PY
+  if [[ $? -ne 0 ]]; then
+    add_problem "GitHub write access check failed — see section 8 above. The cloud run cannot see iMessages until this passes."
+  fi
+else
+  note "SKIPPED — no config or no python3."
 fi
 
 # Verdict

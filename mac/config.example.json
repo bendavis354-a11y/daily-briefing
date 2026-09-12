@@ -1,7 +1,7 @@
 {
-  "client_id": "REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID",
-  "client_secret": "REPLACE_WITH_GOOGLE_OAUTH_CLIENT_SECRET",
-  "refresh_token": "REPLACE_WITH_REFRESH_TOKEN_FOR_bendavis354@gmail.com",
-  "drive_file_id": "REPLACE_WITH_DRIVE_IMESSAGE_FILE_ID",
+  "github_token": "REPLACE_WITH_FINE_GRAINED_PAT_CONTENTS_READ_WRITE",
+  "github_repo": "bendavis354-a11y/daily-briefing",
+  "github_branch": "claude/briefing",
+  "encryption_key": "REPLACE_WITH_THE_SAME_VALUE_AS_CLOUD_STATE_ENCRYPTION_KEY",
   "window_hours": 48
 }

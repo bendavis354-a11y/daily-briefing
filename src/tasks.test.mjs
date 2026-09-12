@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert';
 import {
-  carryForwardTasks, applyReplyCompletions, retainTasks,
+  carryForwardTasks, applyReplyCompletions, retainTasks, dedupeTasks,
   extractReplyObservations, updatePatterns
 } from './tasks.mjs';
 
@@ -125,6 +125,68 @@ check('a NEWER reply from the same correspondent IS counted and average moves', 
   const m = p.correspondents['maya@example.com'];
   assert.strictEqual(m.replies, 2);
   assert.strictEqual(m.avgReplyHours, 18, '(24h + 12h) / 2');
+});
+
+// ── newly raised tasks survive the same run that raises them ─────────────────
+// Regression: tasks are only stamped with addedAt when persisted, so a task
+// raised this run has none. retainTasks used to read that absence as the year
+// 2000 (Date.parse(0) === "0" === 2000-01-01) and drop every new task, which
+// left the action-items checklist permanently empty.
+check('a task raised this run (no addedAt) is retained, not aged out', () => {
+  const fresh = { id: 'todo-imsg-chat-valeska', text: 'Reply to iMessage from Valeska', status: 'open', origin: 'imessage' };
+  const kept = retainTasks([fresh], NOW);
+  assert.strictEqual(kept.length, 1, 'an unstamped task is new, not 26 years old');
+  assert.strictEqual(kept[0].id, 'todo-imsg-chat-valeska');
+});
+
+check('an unstamped task still ages out once it carries a real old addedAt', () => {
+  const old = { id: 'todo-old', text: 'Follow up', status: 'open', addedAt: iso(46) };
+  assert.strictEqual(retainTasks([old], NOW).length, 0);
+});
+
+check('an unstamped task is not auto-completed by a reply that predates the run', () => {
+  const tasks = [{ id: 'todo-x', conversationKey: '<maya@x>', text: 'Follow up', status: 'open' }];
+  const convo = {
+    conversationKey: '<maya@x>',
+    latestMessage: { fromMe: true, internalDate: NOW.getTime() - 3 * 3600 * 1000 }
+  };
+  applyReplyCompletions(tasks, [convo], NOW);
+  assert.strictEqual(tasks[0].status, 'open', 'an older reply cannot complete a task raised now');
+});
+
+check('the full lifecycle keeps a newly raised iMessage todo', () => {
+  const todos = [{ id: 'todo-imsg-chat-jd', text: 'Reply to iMessage from Jean-David', status: 'open', origin: 'imessage' }];
+  const merged = carryForwardTasks(todos, []);
+  applyReplyCompletions(merged, [], NOW);
+  assert.strictEqual(retainTasks(merged, NOW).length, 1);
+});
+
+// ── duplicate asks ───────────────────────────────────────────────────────────
+check('the same ask arriving on two conversation keys is listed once', () => {
+  const dupes = [
+    { id: 'todo-<abc@mail>', conversationKey: '<abc@mail>', text: 'Review: payment processing protocols', status: 'open' },
+    { id: 'todo-gthread:x:1a09', conversationKey: 'gthread:x:1a09', text: 'Review: payment processing protocols', status: 'open' }
+  ];
+  const out = dedupeTasks(dupes);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].id, 'todo-<abc@mail>', 'first occurrence wins');
+});
+
+check('dedupe keeps the carried-forward copy, which holds the age', () => {
+  const out = dedupeTasks([
+    { id: 'todo-old', text: 'Follow up: Demeter', status: 'open', addedAt: iso(6), carriedForward: true },
+    { id: 'todo-new', text: 'follow up:  DEMETER ', status: 'open' }
+  ]);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].addedAt, iso(6), 'normalization is case- and space-insensitive');
+});
+
+check('distinct asks are not collapsed', () => {
+  const out = dedupeTasks([
+    { id: 'a', text: 'Review: payment processing protocols', status: 'open' },
+    { id: 'b', text: 'Review: BD 500 research payment proposal', status: 'open' }
+  ]);
+  assert.strictEqual(out.length, 2);
 });
 
 console.log(`\n${passed} checks passed.`);

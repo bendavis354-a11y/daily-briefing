@@ -16,6 +16,22 @@
 
 const DAY_MS = 24 * 3600 * 1000;
 
+/**
+ * When a task was raised. Tasks are only stamped with `addedAt` once they are
+ * persisted (run-state-update), so a task raised in the current run has none —
+ * it is new, i.e. `now`.
+ *
+ * The subtlety this guards: `Date.parse(t.addedAt || 0)` reads as "epoch when
+ * absent" but Date.parse takes a *string*, so 0 stringifies to "0" and parses
+ * as the year 2000. Every unstamped task therefore looked 26 years old, and
+ * retainTasks dropped all of them — which silently emptied the action-items
+ * checklist for both email and iMessage todos.
+ */
+function taskAddedAt(task, now) {
+  const parsed = Date.parse(task?.addedAt || '');
+  return Number.isNaN(parsed) ? now.getTime() : parsed;
+}
+
 /** Merge prior tasks (any status) behind today's freshly raised todos. */
 export function carryForwardTasks(todayTodos, priorTasks) {
   const ids = new Set(todayTodos.map(t => t.id).filter(Boolean));
@@ -30,6 +46,28 @@ export function carryForwardTasks(todayTodos, priorTasks) {
 }
 
 /**
+ * Collapse tasks that ask for the same thing.
+ *
+ * One message can reach the pipeline twice — the Workspace copy over OAuth and
+ * the personal-mailbox copy via the connector — and when their snippets differ
+ * the content key does not match, so they stay separate conversations and each
+ * raises its own todo. Cross-account identity is the deeper question; the
+ * checklist just must never show one ask twice. First occurrence wins, so a
+ * carried-forward task (with its addedAt and age) outranks a fresh duplicate.
+ */
+export function dedupeTasks(tasks) {
+  const seen = new Set();
+  const out = [];
+  for (const t of tasks || []) {
+    const key = String(t?.text || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    out.push(t);
+  }
+  return out;
+}
+
+/**
  * Auto-complete open tasks whose conversation's latest message is from Ben and
  * postdates the task. Mutates and returns the task list.
  */
@@ -40,7 +78,7 @@ export function applyReplyCompletions(tasks, conversations, now = new Date()) {
     if (t.status === 'completed' || !t.conversationKey) continue;
     const latest = byKey.get(t.conversationKey)?.latestMessage;
     if (!latest?.fromMe || !latest.internalDate) continue;
-    const added = Date.parse(t.addedAt || 0) || 0;
+    const added = taskAddedAt(t, now);
     if (latest.internalDate <= added) continue; // reply predates the ask
     t.status = 'completed';
     t.completedAt = new Date(latest.internalDate).toISOString();
@@ -62,8 +100,8 @@ export function retainTasks(tasks, now = new Date(), { openMaxDays = 45, complet
       const anchor = Date.parse(t.detectedAt || t.completedAt || 0);
       if (anchor && now - anchor > completedLingerDays * DAY_MS) continue;
     } else {
-      const added = Date.parse(t.addedAt || 0);
-      if (added && now - added > openMaxDays * DAY_MS) continue;
+      const added = taskAddedAt(t, now);
+      if (now - added > openMaxDays * DAY_MS) continue;
     }
     out.push(t);
   }

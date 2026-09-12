@@ -4,6 +4,11 @@
  * Commits index.html + .nojekyll + state.enc to the claude/briefing branch via
  * a temporary worktree, without disturbing the main checkout. Replaces the
  * hand-driven git choreography in the routine prompt.
+ *
+ * The branch has a second writer: the Mac exporter pushes imessages.enc to it
+ * every couple of hours. Each attempt therefore re-fetches and rebuilds the
+ * worktree from the current remote tip, so their commits are carried forward
+ * rather than clobbered, and a push that loses the race is simply retried.
  */
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -19,32 +24,57 @@ for (const f of ['index.html', STATE_FILE]) {
   }
 }
 
-try { git(['worktree', 'remove', '--force', WT]); } catch {}
-try { git(['fetch', 'origin', STATE_BRANCH]); } catch (err) { console.warn(`fetch: ${err.message}`); }
+const ATTEMPTS = 3;
 
-let hasRemote = true;
-try { git(['rev-parse', '--verify', `origin/${STATE_BRANCH}`]); } catch { hasRemote = false; }
+function attemptDeploy() {
+  try { git(['worktree', 'remove', '--force', WT]); } catch {}
+  try { git(['fetch', 'origin', STATE_BRANCH]); } catch (err) { console.warn(`fetch: ${err.message}`); }
 
-if (hasRemote) {
-  git(['worktree', 'add', '--detach', WT, `origin/${STATE_BRANCH}`]);
-} else {
-  git(['worktree', 'add', '--detach', WT]);
-  git(['-C', WT, 'rm', '-rf', '--quiet', '.']);
-}
+  let hasRemote = true;
+  try { git(['rev-parse', '--verify', `origin/${STATE_BRANCH}`]); } catch { hasRemote = false; }
 
-fs.copyFileSync('index.html', `${WT}/index.html`);
-fs.copyFileSync(STATE_FILE, `${WT}/${STATE_FILE}`);
-fs.writeFileSync(`${WT}/.nojekyll`, '');
+  if (hasRemote) {
+    git(['worktree', 'add', '--detach', WT, `origin/${STATE_BRANCH}`]);
+  } else {
+    git(['worktree', 'add', '--detach', WT]);
+    git(['-C', WT, 'rm', '-rf', '--quiet', '.']);
+  }
 
-git(['-C', WT, 'add', 'index.html', '.nojekyll', STATE_FILE]);
-try {
-  git(['-C', WT, 'diff', '--cached', '--quiet']);
-  console.log('Nothing changed — no deploy needed.');
-} catch {
+  // Only these three paths are touched; everything else on the branch —
+  // imessages.enc included — rides along from the tip we just checked out.
+  fs.copyFileSync('index.html', `${WT}/index.html`);
+  fs.copyFileSync(STATE_FILE, `${WT}/${STATE_FILE}`);
+  fs.writeFileSync(`${WT}/.nojekyll`, '');
+
+  git(['-C', WT, 'add', 'index.html', '.nojekyll', STATE_FILE]);
+  try {
+    git(['-C', WT, 'diff', '--cached', '--quiet']);
+    console.log('Nothing changed — no deploy needed.');
+    return true;
+  } catch {}
+
   const date = new Date().toISOString().slice(0, 10);
   git(['-C', WT, 'commit', '-m', `Daily briefing ${date}`]);
   git(['-C', WT, 'push', 'origin', `HEAD:refs/heads/${STATE_BRANCH}`]);
   console.log(`Deployed briefing + state to ${STATE_BRANCH}.`);
+  return true;
+}
+
+let deployed = false;
+for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+  try {
+    deployed = attemptDeploy();
+    break;
+  } catch (err) {
+    const detail = (err.stderr?.toString() || err.message || '').trim();
+    if (attempt === ATTEMPTS) {
+      console.error(`Deploy failed after ${ATTEMPTS} attempts: ${detail}`);
+      try { git(['worktree', 'remove', '--force', WT]); } catch {}
+      process.exit(1);
+    }
+    console.warn(`Deploy attempt ${attempt} failed (${detail.split('\n')[0]}) — refetching and retrying.`);
+  }
 }
 
 try { git(['worktree', 'remove', '--force', WT]); } catch {}
+if (!deployed) process.exit(1);
