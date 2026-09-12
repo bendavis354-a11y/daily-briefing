@@ -68,6 +68,7 @@ node src/tasks.test.mjs
 node src/imessage-store.test.mjs
 node src/refresh-status.test.mjs
 node src/accounts.test.mjs
+node src/meeting-detect.test.mjs
 ```
 
 ## What never goes in the repo

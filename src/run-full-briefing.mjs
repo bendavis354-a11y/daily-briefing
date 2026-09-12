@@ -11,6 +11,7 @@ import { scanConfiguredMailboxes, loadConnectorMessages } from './gmail-api.mjs'
 import { dedupeMessages, groupConversations, reconcileThreadStatus } from './continuity.mjs';
 import { isConnectorAccount, loadAccounts } from './accounts.mjs';
 import { loadImessageExport, tokenExpiryWarning, REPAIR_COMMAND } from './imessage-store.mjs';
+import { findMeetingProposal } from './meeting-detect.mjs';
 import { carryForwardTasks, applyReplyCompletions, retainTasks, dedupeTasks, extractReplyObservations } from './tasks.mjs';
 import { listTomorrowEventsForAccount, listCalendars, listEvents } from './calendar-api.mjs';
 
@@ -435,8 +436,9 @@ for (const convo of activeConvos) {
     }
   }
 
-  // Calendar proposals
-  if (looksLikeMeeting(latest)) {
+  // Calendar proposals — only for a thread still waiting on Ben, as the other
+  // builders do; a meeting he has already answered is his to schedule.
+  if (convo.status === 'waiting_on_ben' && !latest.fromMe && looksLikeMeeting(latest)) {
     calendarProposals.push({
       id: `proposal-${convo.conversationKey}`,
       conversationKey: convo.conversationKey,
@@ -512,9 +514,11 @@ if (imessageData && imessageStatus === 'fresh') {
       text.includes('help') || text.includes('call me') || text.includes('right away');
     const priority = isUrgentMsg ? 'high' : (needsReply ? 'medium' : 'low');
 
-    // Check for scheduling language across the whole conversation
-    const fullText = chatMsgs.map(m => String(m.text || m.body || '')).join(' ');
-    const hasMeetingProposal = looksLikeMeetingText(fullText);
+    // An invitation naming a time, from the other party, that Ben has not yet
+    // answered. Ben's own messages never count, and an answered ask is his to
+    // drive; see meeting-detect.mjs.
+    const meetingAsk = findMeetingProposal(chatMsgs);
+    const hasMeetingProposal = Boolean(meetingAsk);
 
     let isActionable = needsReply || isUrgentMsg || hasMeetingProposal;
     if (isActionable) imessagesActionable++;
@@ -567,16 +571,18 @@ if (imessageData && imessageStatus === 'fresh') {
       });
     }
 
-    // iMessage-derived calendar proposal
-    if (hasMeetingProposal) {
+    // iMessage-derived calendar proposal, carrying the ask itself so the page
+    // shows what was actually said rather than a generic label.
+    if (meetingAsk) {
+      const askText = String(meetingAsk.text || meetingAsk.body || '').replace(/\s+/g, ' ').trim();
       calendarProposals.push({
         id: `proposal-imsg-${chatKey}`,
         title: `Meet with ${senderName}`,
         start: null,
         end: null,
         location: '',
-        detail: String(latest.text || latest.body || '').slice(0, 200),
-        context: `Detected scheduling language in iMessage conversation`,
+        detail: askText.slice(0, 200),
+        context: `${senderName} texted: “${askText.slice(0, 140)}${askText.length > 140 ? '…' : ''}”`,
         sourceSender: senderName,
         sourceSubject: `iMessage from ${senderName}`,
         calendarId: 'primary'
@@ -835,9 +841,3 @@ function buildReplyBody(senderName, subject) {
   return `${greeting}\n\nThank you for your message regarding "${subject}".\n\n[Add your response here.]\n\nBest,\nBen`;
 }
 
-function looksLikeMeetingText(text) {
-  const t = String(text || '').toLowerCase();
-  const meetingWord = /\b(meet|meeting|call|zoom|facetime|lunch|dinner|coffee|hang out|come over|get together|visit|schedule|appointment|catch up)\b/.test(t);
-  const timeRef = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|next week|this week|weekend|\d{1,2}(:\d{2})?\s*(am|pm)|morning|afternoon|evening)\b/i.test(t);
-  return meetingWord && timeRef;
-}
