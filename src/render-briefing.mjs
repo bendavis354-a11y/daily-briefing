@@ -326,7 +326,7 @@ function calEvent(ev) {
 // the item number they appear as — so the response queue can cross-reference
 // rather than silently repeat them.
 const orderedItems = [...((brief || fallbackBrief()).items || [])]
-  .sort((x, y) => (y.priority || 3) - (x.priority || 3));
+  .sort((x, y) => (x.priority || 3) - (y.priority || 3));
 const itemNumberByKey = new Map();
 orderedItems.forEach((item, i) => {
   for (const key of item.conversationKeys || []) itemNumberByKey.set(key, i + 1);
