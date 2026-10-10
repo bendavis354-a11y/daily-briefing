@@ -297,8 +297,7 @@ def _load_aesgcm():
     installed into the user site-packages of one specific Python, and a Command
     Line Tools update that bumps the Python minor version orphans it. Rather
     than fail until someone notices, try to reinstall in place: the job runs
-    every two hours, so a self-repair costs one cycle instead of days of
-    missing texts.
+    hourly, so a self-repair costs one cycle instead of days of missing texts.
     """
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -497,7 +496,26 @@ def token_expiry_note() -> str:
     return ""
 
 
+def hold_awake() -> None:
+    """Keep the Mac from idle-sleeping until this process exits.
+
+    A scheduled wake (install.sh --wake-at) can drop back to sleep within a
+    minute, and the read and push must finish first. caffeinate is spawned as
+    a child watching this PID rather than wrapping the launchd job, because
+    Full Disk Access belongs to the job's own executable (python3): a wrapper
+    would become the responsible process and lose access to chat.db.
+    """
+    try:
+        subprocess.Popen(
+            ["/usr/bin/caffeinate", "-i", "-w", str(os.getpid())],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        pass  # not fatal: the run takes seconds and is usually made while awake
+
+
 def main() -> None:
+    hold_awake()
     cfg = load_config()
     window_hours = int(cfg.get("window_hours", DEFAULT_WINDOW_HOURS))
     db_path = Path(cfg.get("db_path", str(DEFAULT_DB_PATH)))

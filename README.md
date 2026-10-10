@@ -22,7 +22,7 @@ reply. The page's "Check for updates" button pulls it, so a briefing opened at
 9pm can be told which of its asks he has already dealt with. It commits only
 when the facts actually changed.
 
-**The iMessage exporter**, every two hours, on Ben's Mac. See `mac/README.md`.
+**The iMessage exporter**, hourly and on every wake, on Ben's Mac. See `mac/README.md`.
 It publishes `imessages.enc` to the same branch.
 
 The analysis is written once and must hold all evening. The facts underneath it

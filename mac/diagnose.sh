@@ -92,6 +92,16 @@ if [[ -f "$PLIST" ]]; then
   else
     note "could not parse a script path out of the plist."
   fi
+  # StartInterval drops every firing that falls while the Mac sleeps and
+  # restarts its timer on wake, so short sessions never upload. The installer
+  # now writes StartCalendarInterval, which fires on wake instead.
+  if grep -q '<key>StartInterval</key>' "$PLIST" 2>/dev/null; then
+    note "schedule: OLD StartInterval timer — skips every run that falls during sleep."
+    needs_reinstall=1
+    add_problem "The job uses the old StartInterval schedule, which misses runs while the Mac sleeps. Re-run: bash mac/install.sh"
+  elif grep -q '<key>StartCalendarInterval</key>' "$PLIST" 2>/dev/null; then
+    note "schedule: hourly StartCalendarInterval (fires on wake)."
+  fi
 else
   note "NO PLIST at $PLIST — the exporter was never installed on this Mac (or was uninstalled)."
   needs_reinstall=1

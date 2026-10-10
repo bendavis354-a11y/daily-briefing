@@ -24,8 +24,20 @@ import { decryptState } from './state-store.mjs';
 export const IMESSAGE_BRANCH = 'claude/briefing';
 export const IMESSAGE_FILE = 'imessages.enc';
 
-/** Exports older than this are reported but never processed. */
-export const STALE_AFTER_HOURS = 6;
+/**
+ * Exports older than this are reported but never processed.
+ *
+ * The brief runs once a day, so the question that matters is whether the
+ * export postdates the previous brief: anything under a day old may hold texts
+ * no brief has seen. Past that it was already consumed, and reprocessing would
+ * present yesterday's chats as current. Six hours, tuned for a Mac uploading
+ * every two hours, discarded real data: the 10/08 run dropped a 23.6h export
+ * that no brief had read.
+ */
+export const STALE_AFTER_HOURS = 24;
+
+/** A processed export older than this is flagged so the brief says texts lag. */
+export const LAGGING_AFTER_HOURS = 6;
 
 /** Start warning about the GitHub token this many days before it lapses. */
 export const TOKEN_WARN_DAYS = 21;

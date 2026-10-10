@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { encryptState } from './state-store.mjs';
-import { loadImessageExport, STALE_AFTER_HOURS, TOKEN_WARN_DAYS, tokenExpiryWarning } from './imessage-store.mjs';
+import { loadImessageExport, STALE_AFTER_HOURS, LAGGING_AFTER_HOURS, TOKEN_WARN_DAYS, tokenExpiryWarning } from './imessage-store.mjs';
 
 process.env.STATE_ENCRYPTION_KEY = 'test-key-for-imessage-store';
 
@@ -43,6 +43,28 @@ check('a recent export reads as fresh', () => {
     assert.equal(r.data.messages.length, 1);
     assert.ok(r.ageHours > 1.9 && r.ageHours < 2.1, `ageHours=${r.ageHours}`);
   });
+});
+
+// The 10/08 brief ran at 21:00Z against an export uploaded 10/07 21:25Z. No
+// brief had read it, and the old six-hour limit threw it away.
+check('an export from since the previous daily brief is still used', () => {
+  inScratch(() => {
+    fs.writeFileSync('imessages.enc', encryptState(payload(hoursAgo(23.6))));
+    const r = loadImessageExport({ now: NOW });
+    assert.equal(r.status, 'fresh');
+    assert.ok(r.ageHours > LAGGING_AFTER_HOURS, 'old enough that the brief must flag the lag');
+  });
+});
+
+check('a day-old export reads as stale, so yesterday is not replayed as today', () => {
+  inScratch(() => {
+    fs.writeFileSync('imessages.enc', encryptState(payload(hoursAgo(29))));
+    assert.equal(loadImessageExport({ now: NOW }).status, 'stale');
+  });
+});
+
+check('the lag flag fires before an export goes stale', () => {
+  assert.ok(LAGGING_AFTER_HOURS < STALE_AFTER_HOURS);
 });
 
 check('an export past the staleness limit reads as stale', () => {

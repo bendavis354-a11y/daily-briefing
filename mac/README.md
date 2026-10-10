@@ -36,10 +36,28 @@ in the iMessage path at all any more.
 The payload is AES-256-GCM encrypted before it is committed, in the same
 container `state.enc` uses, so the repo may stay public.
 
-If this Mac is asleep/off at export time, a plain `cron` job is just skipped —
-that is why the data went stale. This uses a **launchd agent** instead, which
-catches up shortly after the Mac wakes, and runs every 2 hours so the export
-stays under the routine's 6-hour staleness limit during normal use.
+If this Mac is asleep/off at export time, a plain `cron` job is just skipped.
+This uses a **launchd agent** on an hourly `StartCalendarInterval`, which
+launchd runs the next time the Mac wakes if a scheduled time passed during
+sleep — so every wake produces a fresh export within minutes.
+
+An earlier version used `StartInterval`, which does *not* catch up: it drops
+any firing that falls during sleep and restarts its two-hour timer on wake, so
+a Mac opened for under two hours never uploaded. That is why exports arrived
+days apart. `bash mac/diagnose.sh --fix` detects the old schedule and
+reinstalls.
+
+A sleeping Mac runs nothing at all. If the lid is often shut through the
+afternoon, add a daily wake shortly before the 5pm briefing:
+
+```bash
+bash mac/install.sh --wake-at 16:30
+```
+
+That sets `sudo pmset repeat wakeorpoweron` (it replaces any existing repeating
+power schedule, which the installer prints first). It works when the Mac is on
+power. The briefing uses an export up to 24 hours old, and flags one more than
+6 hours old so the brief says texts lag.
 
 ## What you need
 
@@ -88,7 +106,7 @@ The installer:
    (outside the git repo, so secrets are never committed).
 2. Installs a launchd agent at
    `~/Library/LaunchAgents/com.ben.imessage-export.plist`.
-3. Loads it (runs every 2 hours, plus once immediately).
+3. Loads it (runs hourly on the hour, on every wake, and once immediately).
 
 Then **edit the config** with your real values:
 
