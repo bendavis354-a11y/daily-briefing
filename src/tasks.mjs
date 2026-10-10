@@ -111,26 +111,34 @@ export function retainTasks(tasks, now = new Date(), { openMaxDays = 45, textMax
       if (anchor && now - anchor > completedLingerDays * DAY_MS) continue;
     } else {
       const added = taskAddedAt(t, now);
-      const maxDays = t.origin === 'imessage' ? textMaxDays : openMaxDays;
+      // Keyed on the chat key, not origin: system notices such as the token
+      // warning also carry origin 'imessage' but are not replies to anyone.
+      const isTextAsk = String(t.conversationKey || '').startsWith('imsg:');
+      const maxDays = isTextAsk ? textMaxDays : openMaxDays;
       if (now - added > maxDays * DAY_MS) continue;
     }
     out.push(t);
   }
-  if (out.length <= cap) return out;
+  // The cap bounds OPEN items only. A completed task must always survive: if
+  // it were cut here, run-state-update would find no completed copy and keep
+  // the stored open one, silently undoing the completion. Completed tasks
+  // leave within a day anyway, so they cannot accumulate.
+  const openCount = out.filter(t => t.status !== 'completed').length;
+  if (openCount <= cap) return out;
 
-  // Open before completed, then priority, then newest; ties keep list order.
+  // Priority first, then newest; ties keep list order.
   const PRIORITY = { high: 0, medium: 1, low: 2 };
   const keep = new Set(
     out.map((t, i) => ({ t, i }))
+      .filter(x => x.t.status !== 'completed')
       .sort((a, b) =>
-        (a.t.status === 'completed') - (b.t.status === 'completed') ||
         (PRIORITY[a.t.priority] ?? 1) - (PRIORITY[b.t.priority] ?? 1) ||
         taskAddedAt(b.t, now) - taskAddedAt(a.t, now) ||
         a.i - b.i)
       .slice(0, cap)
       .map(x => x.i)
   );
-  return out.filter((_, i) => keep.has(i));
+  return out.filter((t, i) => t.status === 'completed' || keep.has(i));
 }
 
 /**

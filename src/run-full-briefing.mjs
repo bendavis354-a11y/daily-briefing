@@ -530,16 +530,23 @@ if (imessageData && imessageStatus === 'fresh') {
     const isFromMe = latest.is_from_me || false;
     // A shortcode (bank codes, alerts) cannot be replied to, and a message with
     // no words (a lone emoji, an attachment placeholder) asks nothing.
-    const needsReply = !isFromMe && !endsInTapback &&
+    // Exception: someone else's tapback on a message that names Ben ("Ben, can
+    // you bring the chairs?") is a third party agreeing, not Ben answering.
+    const acknowledged = endsInTapback &&
+      (rawLatest.is_from_me || !/\bben\b/i.test(String(latest.text || latest.body || '')));
+    const needsReply = !isFromMe && !acknowledged &&
       hasWords(latest.text || latest.body) && !isShortcode(latest.handle || chatKey);
     const msgDate = latest.date || latest.timestamp || '';
     const senderName = latest.sender_name || latest.handle || chatKey;
 
     // Determine priority
     const text = String(latest.text || latest.body || '').toLowerCase();
-    // Whole phrases only: a bare 'help' fired on "happy to help".
-    const isUrgentMsg = !isFromMe &&
-      /\b(urgent|asap|emergency|call me|right away|help me|need (?:your )?help)\b/.test(text);
+    // Requests for help, not the word: a bare 'help' fired on "happy to help",
+    // while "please help" and "can you help?" must still rank high.
+    const isUrgentMsg = !isFromMe && (
+      /\b(?:urgent|asap|emergency|911|sos|call me|right away)\b/.test(text) ||
+      /\b(?:help me|helping me|(?:need|needs|needed) (?:your |some )?help|(?:please|pls|can you|could you|would you) help)\b/.test(text) ||
+      /\bhelp!/.test(text));
     const priority = isUrgentMsg ? 'high' : (needsReply ? 'medium' : 'low');
 
     // Check for scheduling language across the whole conversation
@@ -584,7 +591,7 @@ if (imessageData && imessageStatus === 'fresh') {
     // iMessage-derived todo. The conversationKey is what lets it auto-complete;
     // the context excerpt is what keeps it meaningful once the message itself
     // drops out of the export's rolling window (48h by default) while the item
-    // lives on for up to 45 days.
+    // lives on for up to 14 days.
     if (todoText) {
       const excerpt = String(latest.text || latest.body || '').trim();
       todos.push({
@@ -592,7 +599,7 @@ if (imessageData && imessageStatus === 'fresh') {
         conversationKey: `imsg:${chatKey}`,
         priority,
         text: todoText,
-        context: excerpt ? excerpt.slice(0, 140) : '(no text — attachment or image)',
+        context: excerpt.slice(0, 140),  // non-empty: needsReply requires words
         status: 'open',
         origin: 'imessage'
       });
@@ -709,7 +716,10 @@ const merged = carryForwardTasks(todos, assistantState.openTasks || []);
 // list: the habit profile is built from addressed correspondence.
 applyReplyCompletions(merged, [...conversations, ...imessageConversations], now);
 todos.length = 0;
-todos.push(...dedupeTasks(retainTasks(merged, now)));
+// Dedupe before capping: dedupe keeps the first (carried, dated) copy of an
+// ask, and the cap ranks by recency, so capping first could cut that original
+// in favour of a fresh duplicate and lose its age.
+todos.push(...retainTasks(dedupeTasks(merged), now));
 const completedNow = todos.filter(t => t.status === 'completed').length;
 console.log(`Action items: ${todos.length} total, ${completedNow} auto-completed by replies`);
 
@@ -829,14 +839,24 @@ function isUrgent(msg) {
 // The patterns live inside the functions on purpose: this script runs top to
 // bottom and calls these from the loop above, before any module-level const
 // declared down here would be initialised.
+// The subdomain must sit on a full domain (m.sofi.org, not mail.com, which is
+// a consumer mailbox provider), and .edu/.gov/.mil are exempt because
+// universities and agencies host people's mailboxes on mail./email. hosts.
 function isBulkSender(msg) {
-  const from = String(msg?.from || '');
-  return /@(?:e|em|m|email|emails|mail|mailer|mailing|news|newsletter|newsletters|mkt|marketing|promo|offers|iluv|eg)\./i.test(from) ||
-    /(?:^|<|\s)(?:news|offers|deals|promotions|promo|marketing|campaigns|store-news)@/i.test(from);
+  const from = String(msg?.from || '').toLowerCase();
+  const domain = (from.match(/@([a-z0-9.-]+)/) || [])[1] || '';
+  if (/\.(?:edu|gov|mil)$/.test(domain)) return false;
+  const bulkHost = /^(?:e|em|m|email|emails|mail|mailer|mailing|news|newsletter|newsletters|mkt|marketing|promo|offers|iluv|eg)\.[a-z0-9-]+\.[a-z0-9.-]+$/.test(domain);
+  return bulkHost || /(?:^|<|\s)(?:news|offers|deals|promotions|promo|marketing|campaigns|store-news)@/.test(from);
 }
 
+// Classic tapbacks ('Loved “…”', 'Liked an image'), iOS 18 emoji reactions
+// ('Reacted 🙏 to “…”', seen in Ben's own export) and their removals.
 function isTapback(text) {
-  return /^(?:Loved|Liked|Disliked|Laughed at|Emphasized|Questioned) [“"]/.test(String(text || ''));
+  const t = String(text || '');
+  return /^(?:Loved|Liked|Disliked|Laughed at|Emphasized|Questioned) (?:[“"]|an? (?:image|attachment|photo|video|movie|sticker|audio message|link|location)\b)/.test(t) ||
+    /^Reacted \S{1,12} to (?:[“"]|an? )/u.test(t) ||
+    /^Removed (?:a|an) .{1,30} from (?:[“"]|an? )/u.test(t);
 }
 function hasWords(text) { return /[\p{L}\p{N}]/u.test(String(text || '')); }
 function isShortcode(handle) { return /^\d{3,6}$/.test(String(handle || '')); }

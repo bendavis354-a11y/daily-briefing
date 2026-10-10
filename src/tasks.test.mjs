@@ -273,10 +273,27 @@ check('over the cap, the order of what is kept is unchanged', () => {
 
 check('a text ask ages out after 14 days; an email ask of the same age does not', () => {
   const tasks = [
-    { id: 'text', origin: 'imessage', status: 'open', addedAt: iso(15) },
+    { id: 'text', origin: 'imessage', conversationKey: 'imsg:chat1', status: 'open', addedAt: iso(15) },
     { id: 'mail', origin: 'email', status: 'open', addedAt: iso(15) }
   ];
   assert.deepStrictEqual(retainTasks(tasks, NOW).map(t => t.id), ['mail']);
+});
+
+// The token warning carries origin 'imessage' but is not a reply to anyone;
+// on a 14-day clock it was dropped and re-raised fortnightly with a reset age.
+check('a system notice from the text pipeline keeps the 45-day limit', () => {
+  const tasks = [{ id: 'todo-imsg-token-expiry', origin: 'imessage', status: 'open', addedAt: iso(20) }];
+  assert.strictEqual(retainTasks(tasks, NOW).length, 1);
+});
+
+// Cutting a completed task let run-state-update fall back to the stored open
+// copy, silently undoing a completion the reply detector had just found.
+check('a task completed by a reply is never cut by the cap', () => {
+  const open = Array.from({ length: 60 }, (_, i) => ({ id: `o${i}`, status: 'open', priority: 'medium', addedAt: iso(1) }));
+  const done = { id: 'answered', status: 'completed', priority: 'low', addedAt: iso(40), detectedAt: NOW.toISOString() };
+  const kept = retainTasks([done, ...open], NOW);
+  assert.ok(kept.some(t => t.id === 'answered'), 'the completion survives');
+  assert.strictEqual(kept.filter(t => t.status !== 'completed').length, 60, 'open items still capped at 60');
 });
 
 console.log(`\n${passed} checks passed.`);

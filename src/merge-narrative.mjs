@@ -56,25 +56,29 @@ brief.items.forEach((item, i) => {
   if (item.actions || item.replyDraft || item.body) fail(`${at}: reply drafts / action buttons are not permitted — items link to the thread only`);
 });
 
-// Priority runs 5 = most urgent; the page sorts descending. Read as 1 = most
-// urgent, a resolved item lands at the top of the brief (10/09: a closed
-// Spirit Matters item led the page). Catch the inversion rather than guess.
+// Priority runs 5 = most urgent; the page sorts descending. On 10/09 the scale
+// was read as 1 = most urgent, which reversed the whole page. The renderer now
+// always sorts resolved items last, so that alone cannot top the page again;
+// this only warns, since a hard failure would stall an unattended run over a
+// judgement call. A resolved item with an explicit priority above EVERY
+// action_required item is the tell that the scale itself is backwards.
 brief.items.forEach((item, i) => {
   const p = item.priority;
   if (p !== undefined && (!Number.isInteger(p) || p < 1 || p > 5)) {
     fail(`items[${i}]: priority ${JSON.stringify(p)} must be an integer 1–5 (5 = most urgent)`);
   }
 });
-const urgencyOf = it => it.priority ?? 3;
-const openItems = brief.items.filter(it => it.status === 'action_required');
-// Resolved only: a watched high-stakes thread may fairly outrank a small action.
-const closedItems = brief.items.filter(it => it.status === 'resolved');
-if (openItems.length && closedItems.length) {
-  const lowestOpen = Math.min(...openItems.map(urgencyOf));
-  const inverted = closedItems.filter(it => urgencyOf(it) > lowestOpen);
+const openPriorities = brief.items
+  .filter(it => it.status === 'action_required' && Number.isInteger(it.priority))
+  .map(it => it.priority);
+if (openPriorities.length) {
+  const highestOpen = Math.max(...openPriorities);
+  const inverted = brief.items.filter(it =>
+    it.status === 'resolved' && Number.isInteger(it.priority) && it.priority > highestOpen);
   if (inverted.length) {
-    fail(`priority looks inverted: ${inverted.map(it => `"${it.id}" (${it.status}, ${urgencyOf(it)})`).join(', ')} ` +
-      `outranks action_required items at ${lowestOpen}. Priority is 5 = most urgent and the page sorts descending.`);
+    console.warn(`WARN priority may be inverted: ${inverted.map(it => `"${it.id}" (resolved, ${it.priority})`).join(', ')} ` +
+      `outranks every action_required item (highest ${highestOpen}). Priority is 5 = most urgent; ` +
+      `if you meant 1 = most urgent, the whole page is in reverse order.`);
   }
 }
 

@@ -70,7 +70,9 @@ Create this structure in the GitHub Pages repo:
     └── index.html
 ```
 
-`dist/index.html` is copied or written to root `index.html` before deploy.
+`dist/index.html` (gitignored) is the encrypted page. `node src/deploy-briefing.mjs`
+publishes it as `index.html` on `claude/briefing`; nothing writes the root
+`index.html`, so a run leaves the working tree clean.
 
 ## 4. Claude Routine Configuration
 
@@ -618,19 +620,18 @@ The encryption script should:
 - Read rendered plaintext HTML from a temp or ignored file.
 - Encrypt with AES-256-GCM.
 - Derive the key from `BRIEFING_PASSWORD`.
-- Write only encrypted `index.html` to the repo root.
+- Write only the encrypted page, to `dist/index.html` (gitignored).
 
 Do not commit plaintext briefing content.
 
 ## 12. Deployment
 
-Routine deploys to `claude/briefing`:
+Routine deploys to `claude/briefing` with one command, which copies
+`dist/index.html` to `index.html` on that branch along with `.nojekyll` and
+`state.enc`, and retries if the background refresh job pushed first:
 
 ```bash
-git checkout -B claude/briefing
-git add index.html .nojekyll
-git commit -m "Briefing update: $(date +%Y-%m-%d)" || true
-git push origin claude/briefing --force-with-lease
+node src/deploy-briefing.mjs
 ```
 
 GitHub Pages should be configured to serve from:

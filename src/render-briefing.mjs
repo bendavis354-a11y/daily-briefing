@@ -325,8 +325,12 @@ function calEvent(ev) {
 // Priority items in presentation order, plus a lookup from conversation key to
 // the item number they appear as — so the response queue can cross-reference
 // rather than silently repeat them.
+// Resolved items always go last: a closed matter never leads the page, whatever
+// priority it was given (on 10/09 a resolved item came first).
 const orderedItems = [...((brief || fallbackBrief()).items || [])]
-  .sort((x, y) => (y.priority || 3) - (x.priority || 3));
+  .sort((x, y) =>
+    (x.status === 'resolved') - (y.status === 'resolved') ||
+    (y.priority || 3) - (x.priority || 3));
 const itemNumberByKey = new Map();
 orderedItems.forEach((item, i) => {
   for (const key of item.conversationKeys || []) itemNumberByKey.set(key, i + 1);
