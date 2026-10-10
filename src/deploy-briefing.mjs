@@ -17,7 +17,10 @@ import { STATE_BRANCH, STATE_FILE } from './state-store.mjs';
 const WT = '/tmp/briefing-deploy-wt';
 const git = (args, opts = {}) => execFileSync('git', args, { stdio: 'pipe', ...opts }).toString();
 
-for (const f of ['index.html', STATE_FILE]) {
+// The built page lives in dist/ (gitignored); it is published as index.html.
+const PAGE = process.env.ENCRYPTED_BRIEFING_HTML || 'dist/index.html';
+
+for (const f of [PAGE, STATE_FILE]) {
   if (!fs.existsSync(f)) {
     console.error(`Missing ${f} — run the build and state-update steps first.`);
     process.exit(1);
@@ -42,7 +45,7 @@ function attemptDeploy() {
 
   // Only these three paths are touched; everything else on the branch —
   // imessages.enc included — rides along from the tip we just checked out.
-  fs.copyFileSync('index.html', `${WT}/index.html`);
+  fs.copyFileSync(PAGE, `${WT}/index.html`);
   fs.copyFileSync(STATE_FILE, `${WT}/${STATE_FILE}`);
   fs.writeFileSync(`${WT}/.nojekyll`, '');
 

@@ -375,7 +375,7 @@ for (const convo of activeConvos) {
 
   if (isFinancial) {
     financial.push(item);
-    if (convo.status === 'waiting_on_ben') {
+    if (convo.status === 'waiting_on_ben' && !isBulkSender(latest)) {
       todos.push({
         id: `todo-fin-${convo.conversationKey}`,
         conversationKey: convo.conversationKey,
@@ -518,17 +518,28 @@ if (imessageData && imessageStatus === 'fresh') {
 
   for (const [chatKey, chatMsgs] of chatMap.entries()) {
     chatMsgs.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
-    const latest = chatMsgs[chatMsgs.length - 1];
+    // A chat that ends in a tapback ("Loved “…”"), from anyone, has been
+    // acknowledged: in a 1:1 it is the other side answering Ben, in a group it
+    // is usually one member accepting another's question. Either way it is not
+    // waiting on Ben. The tapback is skipped for what the chat says, and
+    // Ben's own tapback still counts as his response for auto-completion.
+    const rawLatest = chatMsgs[chatMsgs.length - 1];
+    const endsInTapback = isTapback(rawLatest.text || rawLatest.body);
+    const real = chatMsgs.filter(m => !isTapback(m.text || m.body));
+    const latest = real.length ? real[real.length - 1] : rawLatest;
     const isFromMe = latest.is_from_me || false;
-    const needsReply = !isFromMe;
+    // A shortcode (bank codes, alerts) cannot be replied to, and a message with
+    // no words (a lone emoji, an attachment placeholder) asks nothing.
+    const needsReply = !isFromMe && !endsInTapback &&
+      hasWords(latest.text || latest.body) && !isShortcode(latest.handle || chatKey);
     const msgDate = latest.date || latest.timestamp || '';
     const senderName = latest.sender_name || latest.handle || chatKey;
 
     // Determine priority
     const text = String(latest.text || latest.body || '').toLowerCase();
-    const isUrgentMsg =
-      text.includes('urgent') || text.includes('asap') || text.includes('emergency') ||
-      text.includes('help') || text.includes('call me') || text.includes('right away');
+    // Whole phrases only: a bare 'help' fired on "happy to help".
+    const isUrgentMsg = !isFromMe &&
+      /\b(urgent|asap|emergency|call me|right away|help me|need (?:your )?help)\b/.test(text);
     const priority = isUrgentMsg ? 'high' : (needsReply ? 'medium' : 'low');
 
     // Check for scheduling language across the whole conversation
@@ -564,8 +575,9 @@ if (imessageData && imessageStatus === 'fresh') {
     imessageConversations.push({
       conversationKey: `imsg:${chatKey}`,
       latestMessage: {
-        fromMe: isFromMe,
-        internalDate: Date.parse(msgDate) || null
+        // Ben's last act in the chat, tapback included, is what closes an ask.
+        fromMe: rawLatest.is_from_me || false,
+        internalDate: Date.parse(rawLatest.date || rawLatest.timestamp || '') || null
       }
     });
 
@@ -807,6 +819,28 @@ function isUrgent(msg) {
   );
 }
 
+// Marketing mail sends from a dedicated subdomain (m.sofi.org, e.lowes.com,
+// iluv.southwest.com) or a list address (news@). Its subjects are written to
+// trip keyword rules ("Reminder: …", "Please read: …", "…your payment"), and
+// before this check they filled the checklist with loan offers. Such mail
+// still appears in its section; it just never becomes an action item.
+// Deliberately excludes notification./services. subdomains, which carry real
+// bills such as QuickBooks invoices.
+// The patterns live inside the functions on purpose: this script runs top to
+// bottom and calls these from the loop above, before any module-level const
+// declared down here would be initialised.
+function isBulkSender(msg) {
+  const from = String(msg?.from || '');
+  return /@(?:e|em|m|email|emails|mail|mailer|mailing|news|newsletter|newsletters|mkt|marketing|promo|offers|iluv|eg)\./i.test(from) ||
+    /(?:^|<|\s)(?:news|offers|deals|promotions|promo|marketing|campaigns|store-news)@/i.test(from);
+}
+
+function isTapback(text) {
+  return /^(?:Loved|Liked|Disliked|Laughed at|Emphasized|Questioned) [“"]/.test(String(text || ''));
+}
+function hasWords(text) { return /[\p{L}\p{N}]/u.test(String(text || '')); }
+function isShortcode(handle) { return /^\d{3,6}$/.test(String(handle || '')); }
+
 function isAutoReply(msg) {
   const subject = String(msg.subject || '').toLowerCase();
   return (
@@ -842,6 +876,7 @@ function looksLikeMeeting(msg) {
 function needsTodo(msg, status, prior) {
   if (status !== 'waiting_on_ben') return false;
   if (prior?.todoAdded) return false;
+  if (isBulkSender(msg)) return false;
   const subject = String(msg.subject || '').toLowerCase();
   return (
     subject.includes('follow up') || subject.includes('action') || subject.includes('please') ||

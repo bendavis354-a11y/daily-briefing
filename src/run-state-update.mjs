@@ -70,6 +70,23 @@ for (const arc of updateData.arcs || []) {
   }
 }
 
+// Prune conversations nobody has seen in 90 days. The map only ever grew (2,612
+// entries, about two thirds of state.enc by 10/09), and each daily commit adds
+// a full copy of the encrypted file to the branch's history. An entry is a
+// cache, not a decision (ignore/snooze live in their own lists): the scans
+// look back 2 and 14 days, open tasks expire at 45, so a 90-day-silent thread
+// that revives is simply rediscovered. Members of a live storyline are kept,
+// as are legacy entries with no lastSeenAt, which can no longer grow in number.
+const CONVERSATION_MAX_MS = 90 * 24 * 3600 * 1000;
+let prunedConversations = 0;
+for (const [key, c] of Object.entries(newConversations)) {
+  const seen = Date.parse(c.lastSeenAt || '');
+  if (Number.isNaN(seen) || now - seen <= CONVERSATION_MAX_MS) continue;
+  if (c.arcId && storylines[c.arcId]) continue;
+  delete newConversations[key];
+  prunedConversations++;
+}
+
 // Build the action-item set. Items accumulate rather than being replaced: an
 // item stays in memory until completed, so it keeps appearing in the briefing
 // across days. Completion state from the gather step (auto-completed when the
@@ -135,5 +152,6 @@ const updatedState = {
 // by the deploy step. A plaintext copy goes to /tmp for inspection only.
 saveStateLocal(updatedState);
 fs.writeFileSync(nextStateOut, JSON.stringify(updatedState, null, 2));
-console.log(`State written to ${STATE_FILE} (conversations=${Object.keys(newConversations).length}, ` +
+console.log(`State written to ${STATE_FILE} (conversations=${Object.keys(newConversations).length}` +
+  `${prunedConversations ? `, ${prunedConversations} pruned` : ''}, ` +
   `storylines=${Object.keys(storylines).length}, tasks=${openTasks.length}). Deploy step commits it.`);

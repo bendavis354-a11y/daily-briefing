@@ -56,6 +56,28 @@ brief.items.forEach((item, i) => {
   if (item.actions || item.replyDraft || item.body) fail(`${at}: reply drafts / action buttons are not permitted — items link to the thread only`);
 });
 
+// Priority runs 5 = most urgent; the page sorts descending. Read as 1 = most
+// urgent, a resolved item lands at the top of the brief (10/09: a closed
+// Spirit Matters item led the page). Catch the inversion rather than guess.
+brief.items.forEach((item, i) => {
+  const p = item.priority;
+  if (p !== undefined && (!Number.isInteger(p) || p < 1 || p > 5)) {
+    fail(`items[${i}]: priority ${JSON.stringify(p)} must be an integer 1–5 (5 = most urgent)`);
+  }
+});
+const urgencyOf = it => it.priority ?? 3;
+const openItems = brief.items.filter(it => it.status === 'action_required');
+// Resolved only: a watched high-stakes thread may fairly outrank a small action.
+const closedItems = brief.items.filter(it => it.status === 'resolved');
+if (openItems.length && closedItems.length) {
+  const lowestOpen = Math.min(...openItems.map(urgencyOf));
+  const inverted = closedItems.filter(it => urgencyOf(it) > lowestOpen);
+  if (inverted.length) {
+    fail(`priority looks inverted: ${inverted.map(it => `"${it.id}" (${it.status}, ${urgencyOf(it)})`).join(', ')} ` +
+      `outranks action_required items at ${lowestOpen}. Priority is 5 = most urgent and the page sorts descending.`);
+  }
+}
+
 for (const [i, d] of (brief.otherDevelopments || []).entries()) {
   if (!d.text) fail(`otherDevelopments[${i}]: missing "text"`);
 }
