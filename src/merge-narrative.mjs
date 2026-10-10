@@ -56,6 +56,32 @@ brief.items.forEach((item, i) => {
   if (item.actions || item.replyDraft || item.body) fail(`${at}: reply drafts / action buttons are not permitted — items link to the thread only`);
 });
 
+// Priority runs 5 = most urgent; the page sorts descending. On 10/09 the scale
+// was read as 1 = most urgent, which reversed the whole page. The renderer now
+// always sorts resolved items last, so that alone cannot top the page again;
+// this only warns, since a hard failure would stall an unattended run over a
+// judgement call. A resolved item with an explicit priority above EVERY
+// action_required item is the tell that the scale itself is backwards.
+brief.items.forEach((item, i) => {
+  const p = item.priority;
+  if (p !== undefined && (!Number.isInteger(p) || p < 1 || p > 5)) {
+    fail(`items[${i}]: priority ${JSON.stringify(p)} must be an integer 1–5 (5 = most urgent)`);
+  }
+});
+const openPriorities = brief.items
+  .filter(it => it.status === 'action_required' && Number.isInteger(it.priority))
+  .map(it => it.priority);
+if (openPriorities.length) {
+  const highestOpen = Math.max(...openPriorities);
+  const inverted = brief.items.filter(it =>
+    it.status === 'resolved' && Number.isInteger(it.priority) && it.priority > highestOpen);
+  if (inverted.length) {
+    console.warn(`WARN priority may be inverted: ${inverted.map(it => `"${it.id}" (resolved, ${it.priority})`).join(', ')} ` +
+      `outranks every action_required item (highest ${highestOpen}). Priority is 5 = most urgent; ` +
+      `if you meant 1 = most urgent, the whole page is in reverse order.`);
+  }
+}
+
 for (const [i, d] of (brief.otherDevelopments || []).entries()) {
   if (!d.text) fail(`otherDevelopments[${i}]: missing "text"`);
 }

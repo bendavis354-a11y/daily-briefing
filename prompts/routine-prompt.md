@@ -175,7 +175,7 @@ node src/merge-narrative.mjs /tmp/brief.json
 ## STEP 4 — Build
 ```bash
 npm install   # if node_modules missing
-npm run build # validates schema, renders the document, encrypts to index.html
+npm run build # validates schema, renders the document, encrypts to dist/index.html
 ```
 If the build fails, fix the brief and retry. Never deploy a broken page.
 

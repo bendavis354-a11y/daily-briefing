@@ -32,7 +32,7 @@ function taskAddedAt(task, now) {
   return Number.isNaN(parsed) ? now.getTime() : parsed;
 }
 
-/** Merge prior tasks (any status) behind today's freshly raised todos. */
+/** Merge prior tasks (any status) ahead of today's freshly raised todos, oldest first. */
 export function carryForwardTasks(todayTodos, priorTasks) {
   const ids = new Set(todayTodos.map(t => t.id).filter(Boolean));
   const carried = [];
@@ -92,8 +92,18 @@ export function applyReplyCompletions(tasks, conversations, now = new Date()) {
  * Retention policy: open tasks live 45 days; completed tasks linger one day
  * past DETECTION (not past the reply itself, so a reply found today still
  * gets its day on the page), then drop. Capped to bound state growth.
+ *
+ * Text asks get 14 days, not 45. They auto-complete only while their chat is
+ * inside the export's rolling window, so one older than that can never close
+ * on its own, and a two-week-old "reply to this text" is no longer actionable.
+ *
+ * Over the cap, what to keep is decided by rank, never by position. The list
+ * arrives oldest-first (carryForwardTasks puts prior tasks ahead so dedupe
+ * keeps their original date), and a plain slice therefore dropped every task
+ * raised today once the list filled: on 10/09 the newest of its 59 items was
+ * from 10/03, and every text ask and follow-up raised since had been dropped.
  */
-export function retainTasks(tasks, now = new Date(), { openMaxDays = 45, completedLingerDays = 1, cap = 60 } = {}) {
+export function retainTasks(tasks, now = new Date(), { openMaxDays = 45, textMaxDays = 14, completedLingerDays = 1, cap = 60 } = {}) {
   const out = [];
   for (const t of tasks || []) {
     if (t.status === 'completed') {
@@ -101,11 +111,34 @@ export function retainTasks(tasks, now = new Date(), { openMaxDays = 45, complet
       if (anchor && now - anchor > completedLingerDays * DAY_MS) continue;
     } else {
       const added = taskAddedAt(t, now);
-      if (now - added > openMaxDays * DAY_MS) continue;
+      // Keyed on the chat key, not origin: system notices such as the token
+      // warning also carry origin 'imessage' but are not replies to anyone.
+      const isTextAsk = String(t.conversationKey || '').startsWith('imsg:');
+      const maxDays = isTextAsk ? textMaxDays : openMaxDays;
+      if (now - added > maxDays * DAY_MS) continue;
     }
     out.push(t);
   }
-  return out.slice(0, cap);
+  // The cap bounds OPEN items only. A completed task must always survive: if
+  // it were cut here, run-state-update would find no completed copy and keep
+  // the stored open one, silently undoing the completion. Completed tasks
+  // leave within a day anyway, so they cannot accumulate.
+  const openCount = out.filter(t => t.status !== 'completed').length;
+  if (openCount <= cap) return out;
+
+  // Priority first, then newest; ties keep list order.
+  const PRIORITY = { high: 0, medium: 1, low: 2 };
+  const keep = new Set(
+    out.map((t, i) => ({ t, i }))
+      .filter(x => x.t.status !== 'completed')
+      .sort((a, b) =>
+        (PRIORITY[a.t.priority] ?? 1) - (PRIORITY[b.t.priority] ?? 1) ||
+        taskAddedAt(b.t, now) - taskAddedAt(a.t, now) ||
+        a.i - b.i)
+      .slice(0, cap)
+      .map(x => x.i)
+  );
+  return out.filter((t, i) => t.status === 'completed' || keep.has(i));
 }
 
 /**

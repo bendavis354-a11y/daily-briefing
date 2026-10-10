@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import crypto from 'node:crypto';
 
 const password = process.env.BRIEFING_PASSWORD;
@@ -8,7 +9,10 @@ if (!password) {
 }
 
 const inputPath = process.env.PLAIN_BRIEFING_HTML || 'dist/briefing.plain.html';
-const outputPath = process.env.ENCRYPTED_BRIEFING_HTML || 'index.html';
+// Written under dist/ (gitignored), not the repo root: a tracked index.html
+// rewritten on every run left the routine's working tree dirty each night.
+// deploy-briefing.mjs publishes it as index.html on the deploy branch.
+const outputPath = process.env.ENCRYPTED_BRIEFING_HTML || 'dist/index.html';
 const plaintext = fs.readFileSync(inputPath, 'utf8');
 const salt = crypto.randomBytes(16);
 const iv = crypto.randomBytes(12);
@@ -97,5 +101,6 @@ const shell = `<!DOCTYPE html>
 </body>
 </html>`;
 
+fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 fs.writeFileSync(outputPath, shell);
 console.log(`Wrote encrypted ${outputPath}`);

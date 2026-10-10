@@ -76,11 +76,9 @@ npm run build
 
 If validation or build fails, stop and report the error. Do not deploy a broken page.
 
-If the build succeeds:
+If the build succeeds, publish (copies dist/index.html to index.html on
+claude/briefing; never write or commit the root index.html):
 
-git checkout -B claude/briefing
-git add index.html .nojekyll
-git commit -m "Briefing $(date +%Y-%m-%d)" || true
-git push origin claude/briefing --force-with-lease
+node src/deploy-briefing.mjs
 ```
 
