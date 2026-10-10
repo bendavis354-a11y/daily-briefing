@@ -10,7 +10,7 @@ import { loadDurableState } from './state-store.mjs';
 import { scanConfiguredMailboxes, loadConnectorMessages } from './gmail-api.mjs';
 import { dedupeMessages, groupConversations, reconcileThreadStatus } from './continuity.mjs';
 import { isConnectorAccount, loadAccounts } from './accounts.mjs';
-import { loadImessageExport, tokenExpiryWarning, REPAIR_COMMAND } from './imessage-store.mjs';
+import { loadImessageExport, tokenExpiryWarning, REPAIR_COMMAND, LAGGING_AFTER_HOURS } from './imessage-store.mjs';
 import { carryForwardTasks, applyReplyCompletions, retainTasks, dedupeTasks, extractReplyObservations } from './tasks.mjs';
 import { listTomorrowEventsForAccount, listCalendars, listEvents } from './calendar-api.mjs';
 
@@ -107,7 +107,7 @@ const imessageStatus = imessageResult.status;
 const imessageAgeHours = imessageResult.ageHours;
 
 if (imessageStatus === 'fresh') {
-  console.log(`iMessage export loaded from ${imessageResult.source}: ${imessageData.messages?.length || 0} messages, exported ${imessageData.exportedAt}`);
+  console.log(`iMessage export loaded from ${imessageResult.source}: ${imessageData.messages?.length || 0} messages, exported ${imessageData.exportedAt} (${imessageAgeHours.toFixed(1)}h old)`);
 } else if (imessageStatus === 'stale') {
   const age = imessageAgeHours != null ? `${imessageAgeHours.toFixed(1)}h old` : 'undated';
   console.log(`iMessage export is stale (${age}, exported at ${imessageData?.exportedAt || 'unknown'})`);
@@ -488,6 +488,25 @@ if (imessageData && imessageStatus === 'fresh') {
   const messages = imessageData.messages || [];
   imessagesScanned = messages.length;
   console.log(`Processing ${imessagesScanned} iMessages…`);
+
+  // Fresh enough to use, but texts from the last several hours are missing.
+  // The id carries 'notice' so the renderer keeps it out of the chat list; it
+  // is here for the analysis step, which must say in the bottom line that
+  // texts lag rather than imply the inbox is complete.
+  if (imessageAgeHours > LAGGING_AFTER_HOURS) {
+    imessageSection.push({
+      id: 'imsg-lagging-notice',
+      sender: 'System',
+      handle: '',
+      chat: 'system',
+      date: now.toISOString(),
+      summary: `iMessage export is ${imessageAgeHours.toFixed(1)}h old (uploaded ${imessageData.exportedAt}); ` +
+        `texts after that are not in this brief. The Mac has not uploaded since — it may be asleep.`,
+      priority: 'low',
+      needsReply: false,
+      todoText: null
+    });
+  }
 
   // Group by chat
   const chatMap = new Map();

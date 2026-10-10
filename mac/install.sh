@@ -2,17 +2,40 @@
 #
 # Install the iMessage exporter as a launchd agent on this Mac.
 #
-# Runs every 2 hours. launchd coalesces missed runs, so if the Mac was asleep
-# at a scheduled time it fires shortly after wake — keeping the export under
-# the cloud routine's 6-hour staleness limit during normal use.
+# Runs hourly on the hour via StartCalendarInterval. That key, unlike
+# StartInterval, fires the next time the Mac wakes if a scheduled time passed
+# while it slept (launchd.plist(5)), so every wake produces a fresh export
+# within minutes. The old StartInterval schedule restarted its two-hour timer
+# on every wake, so a laptop opened for under two hours never uploaded at all.
+#
+# A sleeping Mac runs nothing. --wake-at schedules a daily wake shortly before
+# the 5pm briefing so the export is fresh even if the lid was shut all
+# afternoon (needs sudo; works when the Mac is on power).
 #
 # Usage:
-#   bash mac/install.sh
+#   bash mac/install.sh                  # install / reinstall the hourly job
+#   bash mac/install.sh --wake-at 16:30  # also wake the Mac daily at 16:30
 #
 set -euo pipefail
 
 LABEL="com.ben.imessage-export"
-INTERVAL_SECONDS=7200   # every 2 hours
+WAKE_AT=""
+
+usage() { awk 'NR>2 && /^#/ {sub(/^# ?/, ""); print; next} NR>2 {exit}' "$0"; }
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --wake-at)   WAKE_AT="${2:-}"; shift 2 || { echo "ERROR: --wake-at needs HH:MM" >&2; exit 2; } ;;
+    --wake-at=*) WAKE_AT="${1#*=}"; shift ;;
+    -h|--help)   usage; exit 0 ;;
+    *)           echo "ERROR: unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+if [[ -n "$WAKE_AT" && ! "$WAKE_AT" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+  echo "ERROR: --wake-at takes a 24-hour local time like 16:30, got '$WAKE_AT'" >&2
+  exit 2
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXPORTER="$SCRIPT_DIR/export-imessages.py"
@@ -77,8 +100,11 @@ cat > "$PLIST" <<PLIST_EOF
         <string>$PYTHON_BIN</string>
         <string>$EXPORTER</string>
     </array>
-    <key>StartInterval</key>
-    <integer>$INTERVAL_SECONDS</integer>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>StandardOutPath</key>
@@ -95,7 +121,21 @@ if launchctl list | grep -q "$LABEL"; then
   launchctl unload "$PLIST" >/dev/null 2>&1 || true
 fi
 launchctl load "$PLIST"
-echo "    Loaded agent (runs every $((INTERVAL_SECONDS / 3600))h, and once now)."
+echo "    Loaded agent (runs hourly on the hour, on every wake, and once now)."
+
+# 5. Optional daily wake. pmset keeps a single repeating schedule, so this
+#    replaces any existing one; show it first so nothing is lost silently.
+if [[ -n "$WAKE_AT" ]]; then
+  echo "    Current repeating power schedule:"
+  pmset -g sched 2>/dev/null | sed 's/^/        /' || true
+  echo "    Setting a daily wake at $WAKE_AT (replaces the schedule above; asks for your password)…"
+  if sudo pmset repeat wakeorpoweron MTWRFSU "$WAKE_AT:00"; then
+    echo "    Daily wake set. The hourly job fires on that wake and uploads."
+  else
+    echo "    WARNING: could not set the wake. Run by hand:" >&2
+    echo "             sudo pmset repeat wakeorpoweron MTWRFSU $WAKE_AT:00" >&2
+  fi
+fi
 
 cat <<NOTE
 
@@ -121,4 +161,5 @@ cat <<NOTE
 
 ==> To uninstall:
     launchctl unload $PLIST && rm $PLIST
+    sudo pmset repeat cancel     # only if you used --wake-at
 NOTE
